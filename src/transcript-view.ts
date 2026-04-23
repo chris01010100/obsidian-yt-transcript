@@ -8,6 +8,7 @@ import {
 import { formatTimestamp } from "./timestampt-utils";
 import { getTranscriptBlocks, highlightText } from "./render-utils";
 import { TranscriptBlock } from "./types";
+import { SummarizationService } from "src/services/SummarizationService";
 
 export const TRANSCRIPT_TYPE_VIEW = "transcript-view";
 export class TranscriptView extends ItemView {
@@ -17,9 +18,12 @@ export class TranscriptView extends ItemView {
 	loaderContainerEl?: HTMLElement;
 	dataContainerEl?: HTMLElement;
 	errorContainerEl?: HTMLElement;
+	summaryContainerEl?: HTMLElement;
 
 	videoTitle?: string;
 	videoData?: TranscriptResponse[] = [];
+	summaryLanguage?: string;
+	private summarizationService = new SummarizationService();
 
 	constructor(leaf: WorkspaceLeaf, plugin: YTranscriptPlugin) {
 		super(leaf);
@@ -91,6 +95,32 @@ export class TranscriptView extends ItemView {
 		titleEl.style.fontWeight = "bold";
 		titleEl.style.marginBottom = "20px";
 	}
+
+	private extractFullText(data: TranscriptResponse): string {
+		return data.lines.map((line) => line.text).join(" ");
+	}
+
+	private renderSummaryPlaceholder(summaryText: string, summaryLanguage?: string) {
+		if (this.summaryContainerEl === undefined) {
+			this.summaryContainerEl = this.contentEl.createEl("div");
+		} else {
+			this.summaryContainerEl.empty();
+		}
+
+		this.summaryContainerEl.style.marginBottom = "20px";
+
+		const headingEl = this.summaryContainerEl.createEl("div", {
+			text: `Summary (${summaryLanguage || "de"})`,
+		});
+		headingEl.style.fontWeight = "bold";
+		headingEl.style.marginBottom = "8px";
+
+		const bodyEl = this.summaryContainerEl.createEl("div", {
+			text: summaryText,
+		});
+		bodyEl.style.color = "var(--text-muted)";
+	}
+
 
 	private formatContentToPaste(url: string, blocks: TranscriptBlock[]) {
 		return blocks
@@ -217,11 +247,15 @@ export class TranscriptView extends ItemView {
 	 * Sets the state of the view
 	 * This is called when the view is loaded
 	 */
-	async setEphemeralState(state: { url: string }): Promise<void> {
+	async setEphemeralState(state: {
+		url: string;
+		summaryLanguage?: string;
+	}): Promise<void> {
 		//If we switch to another view and then switch back, we don't want to reload the data
 		if (this.isDataLoaded) return;
 
 		const leafIndex = this.getLeafIndex();
+		this.summaryLanguage = state.summaryLanguage;
 
 		//The state.url is not null when we call setEphermeralState from the command
 		//in this case, we will save the url to the settings for future look up
@@ -253,10 +287,27 @@ export class TranscriptView extends ItemView {
 
 			if (!data) throw Error();
 
+			const fullText = this.extractFullText(data);
+			const summaryText = await this.summarizationService.summarize(fullText, {
+				language: this.summaryLanguage,
+			});
+			console.log("Transcript full text:", fullText.slice(0, 200));
+			console.log("Service summary:", summaryText);
+
 			this.isDataLoaded = true;
 			this.loaderContainerEl.empty();
 
 			this.renderVideoTitle(data.title);
+			this.renderSummaryPlaceholder(summaryText, this.summaryLanguage);
+			if (this.summaryLanguage) {
+				const languageEl = this.contentEl.createEl("div", {
+					text: `Summary language: ${this.summaryLanguage}`,
+				});
+				languageEl.style.marginBottom = "12px";
+				languageEl.style.color = "var(--text-muted)";
+				languageEl.style.fontSize = "var(--font-ui-small)";
+			}
+
 			this.renderSearchInput(url, data, timestampMod);
 
 			if (this.dataContainerEl === undefined) {

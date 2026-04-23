@@ -7,7 +7,7 @@ import {
 	Setting,
 } from "obsidian";
 import { TranscriptView, TRANSCRIPT_TYPE_VIEW } from "src/transcript-view";
-import { PromptModal } from "src/prompt-modal";
+import { PromptModal, type PromptModalResult } from "src/prompt-modal";
 import { EditorExtensions } from "../editor-extensions";
 import { InsertTranscriptCommand } from "src/commands/insert-transcript";
 
@@ -15,6 +15,7 @@ interface YTranscriptSettings {
 	timestampMod: number;
 	lang: string;
 	country: string;
+	summaryLanguage: string;
 	leafUrls: string[];
 }
 
@@ -22,6 +23,7 @@ const DEFAULT_SETTINGS: YTranscriptSettings = {
 	timestampMod: 5,
 	lang: "en",
 	country: "EN",
+	summaryLanguage: "de",
 	leafUrls: [],
 };
 
@@ -54,11 +56,12 @@ export default class YTranscriptPlugin extends Plugin {
 			name: "Get YouTube transcript from url prompt",
 			callback: async () => {
 				const prompt = new PromptModal();
-				const url: string = await new Promise((resolve) =>
-					prompt.openAndGetValue(resolve, () => {}),
+				const result = await new Promise<PromptModalResult>((resolve) =>
+					prompt.openAndGetValue(resolve, () => { }),
 				);
-				if (url) {
-					this.openView(url);
+
+				if (result?.url) {
+					this.openView(result.url, result.summaryLanguage);
 				}
 			},
 		});
@@ -75,7 +78,7 @@ export default class YTranscriptPlugin extends Plugin {
 		this.addSettingTab(new YTranslateSettingTab(this.app, this));
 	}
 
-	async openView(url: string) {
+	async openView(url: string, summaryLanguage?: string) {
 		const leaf = this.app.workspace.getRightLeaf(false)!;
 		await leaf.setViewState({
 			type: TRANSCRIPT_TYPE_VIEW,
@@ -83,6 +86,7 @@ export default class YTranscriptPlugin extends Plugin {
 		this.app.workspace.revealLeaf(leaf);
 		leaf.setEphemeralState({
 			url,
+			summaryLanguage,
 		});
 	}
 
@@ -142,6 +146,21 @@ class YTranslateSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.lang)
 					.onChange(async (value) => {
 						this.plugin.settings.lang = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Summary Language")
+			.setDesc("Default language for summaries")
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("de", "Deutsch")
+					.addOption("en", "English")
+					.addOption("es", "Español")
+					.setValue(this.plugin.settings.summaryLanguage)
+					.onChange(async (value) => {
+						this.plugin.settings.summaryLanguage = value;
 						await this.plugin.saveSettings();
 					}),
 			);

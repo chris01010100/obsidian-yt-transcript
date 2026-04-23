@@ -1,23 +1,27 @@
-import { Modal, ButtonComponent, TextComponent } from "obsidian";
+import {
+	Modal,
+	ButtonComponent,
+	TextComponent,
+	Setting,
+} from "obsidian";
+
+export type PromptModalResult = {
+	url: string;
+	summaryLanguage: string;
+};
 
 export class PromptModal extends Modal {
-	private resolve: (value: string) => void;
+	private resolve: (value: PromptModalResult) => void;
 	private reject: () => void;
 	private submitted = false;
 	private value: string;
 	private initialValue?: string;
+	private summaryLanguage = "de";
 
 	constructor(initialValue?: string) {
 		super(app);
 		this.initialValue = initialValue;
 		this.value = initialValue || "";
-	}
-
-	listenInput(evt: KeyboardEvent) {
-		if (evt.key === "Enter") {
-			evt.preventDefault();
-			this.enterCallback(evt);
-		}
 	}
 
 	onOpen(): void {
@@ -33,26 +37,39 @@ export class PromptModal extends Modal {
 	}
 
 	createForm(): void {
-		// Input field
-		const textInput = new TextComponent(this.contentEl);
-		textInput.inputEl.style.width = "100%";
-		textInput.onChange((value) => (this.value = value));
-		textInput.inputEl.addEventListener("keydown", (evt: KeyboardEvent) =>
-			this.enterCallback(evt),
-		);
+		new Setting(this.contentEl)
+			.setName("YouTube URL")
+			.addText((text) => {
+				text.inputEl.style.width = "100%";
+				text.setValue(this.value);
+				text.onChange((value) => (this.value = value));
+				text.inputEl.addEventListener("keydown", (evt: KeyboardEvent) =>
+					this.enterCallback(evt),
+				);
 
-		// Pre-populate with initial value if provided
-		if (this.initialValue) {
-			textInput.setValue(this.initialValue);
-			// Select all text so user can easily replace it
-			textInput.inputEl.select();
-		}
+				if (this.initialValue) {
+					text.inputEl.select();
+				}
 
-		textInput.inputEl.focus();
+				text.inputEl.focus();
+			});
 
-		// Submit button
+		new Setting(this.contentEl)
+			.setName("Summary Language")
+			.addDropdown((dropdown) => {
+				dropdown
+					.addOption("de", "Deutsch")
+					.addOption("en", "English")
+					.addOption("es", "Español")
+					.setValue(this.summaryLanguage)
+					.onChange((value) => {
+						this.summaryLanguage = value;
+					});
+			});
+
 		const buttonDiv = this.modalEl.createDiv();
 		buttonDiv.addClass("modal-button-container");
+
 		const submitButton = new ButtonComponent(buttonDiv);
 		submitButton.buttonEl.addClass("mod-cta");
 		submitButton.setButtonText("Submit").onClick((evt: Event) => {
@@ -69,12 +86,15 @@ export class PromptModal extends Modal {
 	private resolveAndClose(evt: Event | KeyboardEvent) {
 		this.submitted = true;
 		evt.preventDefault();
-		this.resolve(this.value);
+		this.resolve({
+			url: this.value,
+			summaryLanguage: this.summaryLanguage,
+		});
 		this.close();
 	}
 
 	async openAndGetValue(
-		resolve: (value: string) => void,
+		resolve: (value: PromptModalResult) => void,
 		reject: () => void,
 	): Promise<void> {
 		this.resolve = resolve;

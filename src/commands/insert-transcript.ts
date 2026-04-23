@@ -6,7 +6,7 @@ import {
 	FormatOptions,
 } from "../transcript-formatter";
 import { YoutubeTranscript } from "../youtube-transcript";
-import { PromptModal } from "../prompt-modal";
+import { PromptModal, type PromptModalResult } from "../prompt-modal";
 import { EditorExtensions } from "../../editor-extensions";
 import { TranscriptConfig } from "../types";
 
@@ -15,8 +15,13 @@ export interface InsertTranscriptOptions {
 	timestampMod?: number;
 }
 
+interface PromptInputResult {
+	url: string;
+	summaryLanguage: string;
+}
+
 export class InsertTranscriptCommand {
-	constructor(private plugin: any) {}
+	constructor(private plugin: any) { }
 
 	/**
 	 * Executes the insert transcript command with default settings
@@ -34,10 +39,13 @@ export class InsertTranscriptCommand {
 	): Promise<void> {
 		try {
 			// Get YouTube URL with user confirmation
-			const url = await this.getYouTubeUrlWithConfirmation(editor);
-			if (!url) {
+			const promptInput = await this.getYouTubeUrlWithConfirmation(editor);
+			if (!promptInput?.url) {
 				return; // User cancelled or no URL found
 			}
+
+			const { url, summaryLanguage } = promptInput;
+			console.log("Insert transcript summary language:", summaryLanguage);
 
 			// Validate URL
 			if (!URLDetector.isValidYouTubeUrl(url)) {
@@ -88,19 +96,25 @@ export class InsertTranscriptCommand {
 	 */
 	private async getYouTubeUrlWithConfirmation(
 		editor: Editor,
-	): Promise<string | null> {
+	): Promise<PromptInputResult | null> {
 		// Try to detect URL from selection first, then clipboard
 		const detectedUrl = await this.detectYouTubeUrl(editor);
 
 		// Always show prompt, but pre-populate with detected URL
 		try {
 			const prompt = new PromptModal(detectedUrl || undefined);
-			const userUrl = await new Promise<string>((resolve, reject) => {
+			const result = await new Promise<PromptModalResult>((resolve, reject) => {
 				prompt.openAndGetValue(resolve, reject);
 			});
 
-			// Return the user's input (might be same as detected, or user might have changed it)
-			return userUrl.trim() || null;
+			if (!result?.url?.trim()) {
+				return null;
+			}
+
+			return {
+				url: result.url.trim(),
+				summaryLanguage: result.summaryLanguage,
+			};
 		} catch (error) {
 			// User cancelled
 			return null;
