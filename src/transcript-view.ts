@@ -1,5 +1,5 @@
 import YTranscriptPlugin from "src/main";
-import { ItemView, WorkspaceLeaf, Menu } from "obsidian";
+import { ItemView, WorkspaceLeaf, Menu, TFile } from "obsidian";
 import {
 	TranscriptResponse,
 	YoutubeTranscript,
@@ -119,8 +119,24 @@ export class TranscriptView extends ItemView {
 			text: summaryText,
 		});
 		bodyEl.style.color = "var(--text-muted)";
+		bodyEl.style.userSelect = "text";
+		bodyEl.style.whiteSpace = "pre-wrap";
 	}
 
+
+	private async loadPromptTemplate(): Promise<string | undefined> {
+		const path = this.plugin.settings.promptFilePath?.trim();
+		if (!path) {
+			return undefined;
+		}
+
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) {
+			return undefined;
+		}
+
+		return this.app.vault.cachedRead(file);
+	}
 
 	private formatContentToPaste(url: string, blocks: TranscriptBlock[]) {
 		return blocks
@@ -290,6 +306,10 @@ export class TranscriptView extends ItemView {
 			const fullText = this.extractFullText(data);
 			const summaryText = await this.summarizationService.summarize(fullText, {
 				language: this.summaryLanguage,
+				provider: this.plugin.settings.provider,
+				model: this.plugin.settings.model,
+				ollamaBaseUrl: this.plugin.settings.ollamaBaseUrl,
+				promptTemplate: await this.loadPromptTemplate(),
 			});
 			console.log("Transcript full text:", fullText.slice(0, 200));
 			console.log("Service summary:", summaryText);

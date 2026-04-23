@@ -16,6 +16,12 @@ interface YTranscriptSettings {
 	lang: string;
 	country: string;
 	summaryLanguage: string;
+	provider: "ollama" | "openrouter" | "openai";
+	model: string;
+	ollamaBaseUrl: string;
+	openRouterApiKey: string;
+	openAIApiKey: string;
+	promptFilePath: string;
 	leafUrls: string[];
 }
 
@@ -24,6 +30,12 @@ const DEFAULT_SETTINGS: YTranscriptSettings = {
 	lang: "en",
 	country: "EN",
 	summaryLanguage: "de",
+	provider: "ollama",
+	model: "qwen2.5:3b",
+	ollamaBaseUrl: "http://localhost:11434",
+	openRouterApiKey: "",
+	openAIApiKey: "",
+	promptFilePath: "",
 	leafUrls: [],
 };
 
@@ -161,6 +173,82 @@ class YTranslateSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.summaryLanguage)
 					.onChange(async (value) => {
 						this.plugin.settings.summaryLanguage = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("LLM Provider")
+			.setDesc("Select provider for summaries")
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("ollama", "Ollama")
+					.addOption("openrouter", "OpenRouter")
+					.addOption("openai", "OpenAI")
+					.setValue(this.plugin.settings.provider)
+					.onChange(async (value) => {
+						this.plugin.settings.provider = value as any;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Model")
+			.setDesc("Model name (depends on provider)")
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.model)
+					.onChange(async (value) => {
+						this.plugin.settings.model = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Ollama Base URL")
+			.setDesc("e.g. http://localhost:11434")
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.ollamaBaseUrl)
+					.onChange(async (value) => {
+						this.plugin.settings.ollamaBaseUrl = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("OpenRouter API Key")
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.openRouterApiKey)
+					.setPlaceholder("sk-...")
+					.onChange(async (value) => {
+						this.plugin.settings.openRouterApiKey = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("OpenAI API Key")
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.openAIApiKey)
+					.setPlaceholder("sk-...")
+					.onChange(async (value) => {
+						this.plugin.settings.openAIApiKey = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Prompt File Path")
+			.setDesc("Vault path to a markdown/text prompt template")
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.promptFilePath)
+					.setPlaceholder("Prompts/youtube-summary.md")
+					.onChange(async (value) => {
+						this.plugin.settings.promptFilePath = value;
 						await this.plugin.saveSettings();
 					}),
 			);
