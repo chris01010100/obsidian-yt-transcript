@@ -4,12 +4,28 @@ export interface SummarizationOptions {
     model?: string;
     ollamaBaseUrl?: string;
     promptTemplate?: string;
+    videoTitle?: string;
+    sourceUrl?: string;
+    videoId?: string;
+    llmProvider?: string;
+    modelName?: string;
+    createdAt?: string;
 }
 
 interface OllamaGenerateResponse {
     response?: string;
     done?: boolean;
     error?: string;
+}
+
+interface PromptMetadata {
+    promptTemplate?: string;
+    videoTitle?: string;
+    sourceUrl?: string;
+    videoId?: string;
+    llmProvider?: string;
+    modelName?: string;
+    createdAt?: string;
 }
 
 export class SummarizationService {
@@ -26,6 +42,12 @@ export class SummarizationService {
             model: options?.model || "qwen2.5:3b",
             baseUrl: options?.ollamaBaseUrl || "http://localhost:11434",
             promptTemplate: options?.promptTemplate,
+            videoTitle: options?.videoTitle,
+            sourceUrl: options?.sourceUrl,
+            videoId: options?.videoId,
+            llmProvider: options?.llmProvider,
+            modelName: options?.modelName,
+            createdAt: options?.createdAt,
         });
     }
 
@@ -36,9 +58,15 @@ export class SummarizationService {
             model: string;
             baseUrl: string;
             promptTemplate?: string;
+            videoTitle?: string;
+            sourceUrl?: string;
+            videoId?: string;
+            llmProvider?: string;
+            modelName?: string;
+            createdAt?: string;
         },
     ): Promise<string> {
-        const prompt = this.buildPrompt(text, options.language, options.promptTemplate);
+        const prompt = this.buildPrompt(text, options.language, options);
         const baseUrl = options.baseUrl.replace(/\/$/, "");
 
         const response = await fetch(`${baseUrl}/api/generate`, {
@@ -69,12 +97,27 @@ export class SummarizationService {
     private buildPrompt(
         text: string,
         language: string,
-        promptTemplate?: string,
+        metadata: PromptMetadata,
     ): string {
+        const promptTemplate = metadata.promptTemplate;
         if (promptTemplate?.trim()) {
             return promptTemplate
                 .split("{{language}}").join(language)
-                .split("{{transcript}}").join(text);
+                .split("{{LANGUAGE}}").join(language)
+                .split("{{transcript}}").join(text)
+                .split("{{TRANSCRIPT}}").join(text)
+                .split("{{video_title}}").join(metadata.videoTitle || "")
+                .split("{{source_url}}").join(metadata.sourceUrl || "")
+                .split("{{video_id}}").join(metadata.videoId || "")
+                .split("{{llm_provider}}").join(metadata.llmProvider || "")
+                .split("{{model_name}}").join(metadata.modelName || "")
+                .split("{{created_at}}").join(metadata.createdAt || "")
+                .split("{{VIDEO_TITLE}}").join(metadata.videoTitle || "")
+                .split("{{SOURCE_URL}}").join(metadata.sourceUrl || "")
+                .split("{{VIDEO_ID}}").join(metadata.videoId || "")
+                .split("{{LLM_PROVIDER}}").join(metadata.llmProvider || "")
+                .split("{{MODEL_NAME}}").join(metadata.modelName || "")
+                .split("{{CREATED_AT}}").join(metadata.createdAt || "");
         }
 
         return [

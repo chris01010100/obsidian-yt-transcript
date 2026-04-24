@@ -1,4 +1,4 @@
-import { Editor, Notice } from "obsidian";
+import { Editor, Notice, TFile } from "obsidian";
 import { URLDetector } from "../url-detection";
 import {
 	TranscriptFormatter,
@@ -19,6 +19,16 @@ export interface InsertTranscriptOptions {
 interface PromptInputResult {
 	url: string;
 	summaryLanguage: string;
+}
+
+interface VideoMetadata {
+	videoTitle: string;
+	sourceUrl: string;
+	videoId: string;
+	summaryLanguage: string;
+	llmProvider: string;
+	modelName: string;
+	createdAt: string;
 }
 
 export class InsertTranscriptCommand {
@@ -88,6 +98,16 @@ export class InsertTranscriptCommand {
 			// Load optional prompt template from settings
 			const promptTemplate = await this.loadPromptTemplate();
 
+			const metadata: VideoMetadata = {
+				videoTitle: transcript.title || "Untitled YouTube Video",
+				sourceUrl: url,
+				videoId: this.extractVideoId(url),
+				summaryLanguage,
+				llmProvider: this.plugin.settings?.provider || "ollama",
+				modelName: this.plugin.settings?.model || "",
+				createdAt: new Date().toISOString().slice(0, 10),
+			};
+
 			// Generate summary via LLM
 			const summaryText = await this.summarizationService.summarize(fullText, {
 				language: summaryLanguage,
@@ -95,6 +115,12 @@ export class InsertTranscriptCommand {
 				model: this.plugin.settings?.model,
 				ollamaBaseUrl: this.plugin.settings?.ollamaBaseUrl,
 				promptTemplate,
+				videoTitle: metadata.videoTitle,
+				sourceUrl: metadata.sourceUrl,
+				videoId: metadata.videoId,
+				llmProvider: metadata.llmProvider,
+				modelName: metadata.modelName,
+				createdAt: metadata.createdAt,
 			});
 
 			// Format transcript
@@ -109,7 +135,7 @@ export class InsertTranscriptCommand {
 			const output = this.buildOutput(
 				summaryText,
 				formattedTranscript,
-				summaryLanguage,
+				metadata,
 			);
 
 			if (!output.trim()) return;
@@ -118,6 +144,7 @@ export class InsertTranscriptCommand {
 				editor.posToOffset(insertionStart) + loadingText.length,
 			);
 			editor.replaceRange(output, insertionStart, insertionEnd);
+			await this.renameActiveNote(metadata.videoTitle);
 			new Notice("YouTube summary inserted.");
 		} catch (error) {
 			// Silently fail - errors are expected (network issues, no transcript, etc.)
@@ -215,6 +242,19 @@ export class InsertTranscriptCommand {
 		};
 	}
 
+	private extractVideoId(url: string): string {
+		try {
+			const parsedUrl = new URL(url);
+			const videoId = parsedUrl.searchParams.get("v");
+			if (videoId) return videoId;
+
+			const pathParts = parsedUrl.pathname.split("/").filter(Boolean);
+			return pathParts[pathParts.length - 1] || "";
+		} catch (error) {
+			return "";
+		}
+	}
+
 	private async loadPromptTemplate(): Promise<string | undefined> {
 		const path = this.plugin.settings?.promptFilePath?.trim();
 		if (!path) return undefined;
@@ -228,24 +268,24 @@ export class InsertTranscriptCommand {
 	private buildOutput(
 		summaryText: string,
 		formattedTranscript: string,
-		summaryLanguage: string,
+		metadata: VideoMetadata,
 	): string {
-		const trimmedSummary = summaryText.trim();
-		const frontmatterMatch = trimmedSummary.match(/^---\n[\s\S]*?\n---\n?/);
-		const frontmatter = frontmatterMatch?.[0]?.trim();
-		const summaryBody = frontmatter
-			? trimmedSummary.slice(frontmatter.length).trim()
-			: trimmedSummary;
+		const hydratedSummary = this.replaceMetadataPlaceholders(
+			summaryText.trim(),
+			metadata,
+		);
 
-		const parts: string[] = [];
+		const frontmatterMatch = hydratedSummary.match(/^---\n[\s\S]*?\n---\n?/);
+		const rawFrontmatter = frontmatterMatch?.[0]?.trim();
+		const rawSummaryBody = rawFrontmatter
+			? hydratedSummary.slice(rawFrontmatter.length).trim()
+			: hydratedSummary;
 
-		if (frontmatter) {
-			parts.push(frontmatter, "");
-		}
+		const frontmatter = this.buildFrontmatter(rawFrontmatter, metadata);
+		const parts: string[] = [frontmatter, ""];
 
 		parts.push(
-			`## Summary (${summaryLanguage})`,
-			summaryBody,
+			rawSummaryBody,
 			"",
 			"## Transcript",
 			formattedTranscript,
@@ -253,6 +293,142 @@ export class InsertTranscriptCommand {
 		);
 
 		return parts.join("\n");
+	}
+
+	private replaceMetadataPlaceholders(
+		content: string,
+		metadata: VideoMetadata,
+	): string {
+		return content
+			.split("{{video_title}}").join(metadata.videoTitle)
+			.split("{{source_url}}").join(metadata.sourceUrl)
+			.split("{{video_id}}").join(metadata.videoId)
+			.split("{{language}}").join(metadata.summaryLanguage)
+			.split("{{llm_provider}}").join(metadata.llmProvider)
+			.split("{{model_name}}").join(metadata.modelName)
+			.split("{{created_at}}").join(metadata.createdAt)
+			.split("{{VIDEO_TITLE}}").join(metadata.videoTitle)
+			.split("{{SOURCE_URL}}").join(metadata.sourceUrl)
+			.split("{{VIDEO_ID}}").join(metadata.videoId)
+			.split("{{LANGUAGE}}").join(metadata.summaryLanguage)
+			.split("{{LLM_PROVIDER}}").join(metadata.llmProvider)
+			.split("{{MODEL_NAME}}").join(metadata.modelName)
+			.split("{{CREATED_AT}}").join(metadata.createdAt);
+	}
+
+	private buildFrontmatter(
+		rawFrontmatter: string | undefined,
+		metadata: VideoMetadata,
+	): string {
+		let frontmatterBody = rawFrontmatter
+			? rawFrontmatter.replace(/^---\n?/, "").replace(/\n?---$/, "")
+			: "";
+
+		frontmatterBody = this.upsertFrontmatterField(
+			frontmatterBody,
+			"title",
+			this.quoteYaml(metadata.videoTitle),
+		);
+		frontmatterBody = this.upsertFrontmatterField(
+			frontmatterBody,
+			"source_url",
+			this.quoteYaml(metadata.sourceUrl),
+		);
+		frontmatterBody = this.upsertFrontmatterField(
+			frontmatterBody,
+			"video_id",
+			this.quoteYaml(metadata.videoId),
+		);
+		frontmatterBody = this.upsertFrontmatterField(
+			frontmatterBody,
+			"language",
+			metadata.summaryLanguage,
+		);
+		frontmatterBody = this.upsertFrontmatterField(
+			frontmatterBody,
+			"llm_provider",
+			metadata.llmProvider,
+		);
+		frontmatterBody = this.upsertFrontmatterField(
+			frontmatterBody,
+			"llm_model",
+			this.quoteYaml(metadata.modelName),
+		);
+		frontmatterBody = this.upsertFrontmatterField(
+			frontmatterBody,
+			"created_at",
+			metadata.createdAt,
+		);
+
+		return `---\n${frontmatterBody.trim()}\n---`;
+	}
+
+	private upsertFrontmatterField(
+		frontmatterBody: string,
+		key: string,
+		value: string,
+	): string {
+		const fieldPattern = new RegExp(`^${key}:.*$`, "m");
+		const line = `${key}: ${value}`;
+
+		if (fieldPattern.test(frontmatterBody)) {
+			return frontmatterBody.replace(fieldPattern, line);
+		}
+
+		return `${frontmatterBody.trim()}\n${line}`.trim();
+	}
+
+	private quoteYaml(value: string): string {
+		return JSON.stringify(value || "");
+	}
+
+	private async renameActiveNote(videoTitle: string): Promise<void> {
+		const activeFile = this.plugin.app.workspace.getActiveFile();
+		if (!(activeFile instanceof TFile)) return;
+
+		const safeFileName = this.sanitizeFileName(videoTitle);
+		if (!safeFileName) return;
+
+		const currentFolder = activeFile.parent?.path || "";
+		const targetPath = await this.getAvailableFilePath(
+			currentFolder,
+			safeFileName,
+			activeFile.path,
+		);
+
+		if (targetPath === activeFile.path) return;
+
+		await this.plugin.app.fileManager.renameFile(activeFile, targetPath);
+	}
+
+	private sanitizeFileName(title: string): string {
+		return title
+			.replace(/[\\/:*?"<>|]/g, " ")
+			.replace(/\s+/g, " ")
+			.trim()
+			.slice(0, 120)
+			.trim();
+	}
+
+	private async getAvailableFilePath(
+		folderPath: string,
+		baseName: string,
+		currentPath: string,
+	): Promise<string> {
+		const normalizedFolder = folderPath && folderPath !== "/" ? `${folderPath}/` : "";
+		let candidatePath = `${normalizedFolder}${baseName}.md`;
+
+		if (candidatePath === currentPath) {
+			return candidatePath;
+		}
+
+		let counter = 2;
+		while (this.plugin.app.vault.getAbstractFileByPath(candidatePath)) {
+			candidatePath = `${normalizedFolder}${baseName} ${counter}.md`;
+			counter += 1;
+		}
+
+		return candidatePath;
 	}
 
 	/**
