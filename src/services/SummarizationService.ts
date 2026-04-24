@@ -3,6 +3,7 @@ export interface SummarizationOptions {
     provider?: "ollama" | "openrouter" | "openai";
     model?: string;
     ollamaBaseUrl?: string;
+    openRouterApiKey?: string;
     promptTemplate?: string;
     videoTitle?: string;
     sourceUrl?: string;
@@ -16,6 +17,17 @@ interface OllamaGenerateResponse {
     response?: string;
     done?: boolean;
     error?: string;
+}
+
+interface OpenRouterChatResponse {
+    choices?: Array<{
+        message?: {
+            content?: string;
+        };
+    }>;
+    error?: {
+        message?: string;
+    };
 }
 
 interface PromptMetadata {
@@ -33,14 +45,7 @@ export class SummarizationService {
         const language = options?.language || "de";
         const provider = options?.provider || "ollama";
 
-        if (provider !== "ollama") {
-            return `[Provider ${provider} not implemented yet]`;
-        }
-
-        return this.summarizeWithOllama(text, {
-            language,
-            model: options?.model || "qwen2.5:3b",
-            baseUrl: options?.ollamaBaseUrl || "http://localhost:11434",
+        const metadata: PromptMetadata = {
             promptTemplate: options?.promptTemplate,
             videoTitle: options?.videoTitle,
             sourceUrl: options?.sourceUrl,
@@ -48,7 +53,27 @@ export class SummarizationService {
             llmProvider: options?.llmProvider,
             modelName: options?.modelName,
             createdAt: options?.createdAt,
-        });
+        };
+
+        if (provider === "ollama") {
+            return this.summarizeWithOllama(text, {
+                language,
+                model: options?.model || "qwen2.5:3b",
+                baseUrl: options?.ollamaBaseUrl || "http://localhost:11434",
+                ...metadata,
+            });
+        }
+
+        if (provider === "openrouter") {
+            return this.summarizeWithOpenRouter(text, {
+                language,
+                model: options?.model || "openai/gpt-4o-mini",
+                apiKey: options?.openRouterApiKey || "",
+                ...metadata,
+            });
+        }
+
+        return `[Provider ${provider} not implemented yet]`;
     }
 
     private async summarizeWithOllama(
@@ -92,6 +117,59 @@ export class SummarizationService {
         }
 
         return data.response?.trim() || "[Empty summary returned by Ollama]";
+    }
+
+    private async summarizeWithOpenRouter(
+        text: string,
+        options: {
+            language: string;
+            model: string;
+            apiKey: string;
+            promptTemplate?: string;
+            videoTitle?: string;
+            sourceUrl?: string;
+            videoId?: string;
+            llmProvider?: string;
+            modelName?: string;
+            createdAt?: string;
+        },
+    ): Promise<string> {
+        if (!options.apiKey.trim()) {
+            throw new Error("OpenRouter API key is missing.");
+        }
+
+        const prompt = this.buildPrompt(text, options.language, options);
+
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${options.apiKey}`,
+                "HTTP-Referer": "https://obsidian.md",
+                "X-Title": "Obsidian YTranscript",
+            },
+            body: JSON.stringify({
+                model: options.model,
+                messages: [
+                    {
+                        role: "user",
+                        content: prompt,
+                    },
+                ],
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`OpenRouter request failed: ${response.status} ${response.statusText}`);
+        }
+
+        const data = (await response.json()) as OpenRouterChatResponse;
+
+        if (data.error?.message) {
+            throw new Error(`OpenRouter error: ${data.error.message}`);
+        }
+
+        return data.choices?.[0]?.message?.content?.trim() || "[Empty summary returned by OpenRouter]";
     }
 
     private buildPrompt(

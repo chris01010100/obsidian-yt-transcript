@@ -2,8 +2,10 @@ import {
 	App,
 	Editor,
 	MarkdownView,
+	Notice,
 	Plugin,
 	PluginSettingTab,
+	requestUrl,
 	Setting,
 } from "obsidian";
 import { TranscriptView, TRANSCRIPT_TYPE_VIEW } from "src/transcript-view";
@@ -18,6 +20,7 @@ interface YTranscriptSettings {
 	summaryLanguage: string;
 	provider: "ollama" | "openrouter" | "openai";
 	model: string;
+	availableModels: string[];
 	ollamaBaseUrl: string;
 	openRouterApiKey: string;
 	openAIApiKey: string;
@@ -32,6 +35,7 @@ const DEFAULT_SETTINGS: YTranscriptSettings = {
 	summaryLanguage: "de",
 	provider: "ollama",
 	model: "qwen2.5:3b",
+	availableModels: [],
 	ollamaBaseUrl: "http://localhost:11434",
 	openRouterApiKey: "",
 	openAIApiKey: "",
@@ -188,21 +192,62 @@ class YTranslateSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.provider)
 					.onChange(async (value) => {
 						this.plugin.settings.provider = value as any;
+						this.plugin.settings.availableModels = [];
 						await this.plugin.saveSettings();
+						this.display();
 					}),
 			);
 
 		new Setting(containerEl)
+			.setName("Load Models")
+			.setDesc("Fetch available models from the selected provider")
+			.addButton((button) =>
+				button.setButtonText("Load Models").onClick(async () => {
+					try {
+						new Notice("Loading models…");
+						const models = await this.loadModelsForCurrentProvider();
+						this.plugin.settings.availableModels = models;
+						await this.plugin.saveSettings();
+						new Notice(`Loaded ${models.length} models.`);
+						this.display();
+					} catch (error) {
+						console.error("Failed to load models:", error);
+						new Notice("Failed to load models. Check developer console.");
+					}
+				}),
+			);
+
+		new Setting(containerEl)
 			.setName("Model")
-			.setDesc("Model name (depends on provider)")
-			.addText((text) =>
-				text
+			.setDesc("Selected model. It only changes when you select another model.")
+			.addDropdown((dropdown) => {
+				const modelSet = new Set<string>();
+
+				if (this.plugin.settings.model) {
+					modelSet.add(this.plugin.settings.model);
+				}
+
+				this.plugin.settings.availableModels.forEach((model) => {
+					modelSet.add(model);
+				});
+
+				if (modelSet.size === 0) {
+					modelSet.add(DEFAULT_SETTINGS.model);
+				}
+
+				Array.from(modelSet)
+					.sort((a, b) => a.localeCompare(b))
+					.forEach((model) => {
+						dropdown.addOption(model, model);
+					});
+
+				dropdown
 					.setValue(this.plugin.settings.model)
 					.onChange(async (value) => {
 						this.plugin.settings.model = value;
 						await this.plugin.saveSettings();
-					}),
-			);
+					});
+			});
 
 		new Setting(containerEl)
 			.setName("Ollama Base URL")
@@ -264,5 +309,74 @@ class YTranslateSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}),
 			);
+	}
+
+	private async loadModelsForCurrentProvider(): Promise<string[]> {
+		switch (this.plugin.settings.provider) {
+			case "ollama":
+				return this.loadOllamaModels();
+			case "openrouter":
+				return this.loadOpenRouterModels();
+			case "openai":
+				return this.loadOpenAIModels();
+			default:
+				return [];
+		}
+	}
+
+	private async loadOllamaModels(): Promise<string[]> {
+		const baseUrl = this.plugin.settings.ollamaBaseUrl.replace(/\/$/, "");
+		const response = await requestUrl({
+			url: `${baseUrl}/api/tags`,
+			method: "GET",
+		});
+
+		const models = response.json?.models || [];
+		return models
+			.map((model: { name?: string }) => model.name)
+			.filter((name: string | undefined): name is string => Boolean(name))
+			.sort((a: string, b: string) => a.localeCompare(b));
+	}
+
+	private async loadOpenRouterModels(): Promise<string[]> {
+		const apiKey = this.plugin.settings.openRouterApiKey.trim();
+		if (!apiKey) {
+			throw new Error("OpenRouter API key is missing.");
+		}
+
+		const response = await requestUrl({
+			url: "https://openrouter.ai/api/v1/models",
+			method: "GET",
+			headers: {
+				Authorization: `Bearer ${apiKey}`,
+			},
+		});
+
+		const models = response.json?.data || [];
+		return models
+			.map((model: { id?: string }) => model.id)
+			.filter((id: string | undefined): id is string => Boolean(id))
+			.sort((a: string, b: string) => a.localeCompare(b));
+	}
+
+	private async loadOpenAIModels(): Promise<string[]> {
+		const apiKey = this.plugin.settings.openAIApiKey.trim();
+		if (!apiKey) {
+			throw new Error("OpenAI API key is missing.");
+		}
+
+		const response = await requestUrl({
+			url: "https://api.openai.com/v1/models",
+			method: "GET",
+			headers: {
+				Authorization: `Bearer ${apiKey}`,
+			},
+		});
+
+		const models = response.json?.data || [];
+		return models
+			.map((model: { id?: string }) => model.id)
+			.filter((id: string | undefined): id is string => Boolean(id))
+			.sort((a: string, b: string) => a.localeCompare(b));
 	}
 }

@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.6.0] - 2026-04-24
+
+### Added
+
+- Full OpenRouter integration for LLM summarization
+- Support for OpenRouter API key authentication
+- Dynamic model loading from OpenRouter API
+- Chat-based completion support via `/v1/chat/completions`
+- Metadata injection into OpenRouter prompts:
+  - `{{VIDEO_TITLE}}`
+  - `{{SOURCE_URL}}`
+  - `{{VIDEO_ID}}`
+  - `{{LLM_PROVIDER}}`
+  - `{{MODEL_NAME}}`
+  - `{{CREATED_AT}}`
+
+### Changed
+
+- SummarizationService now supports multiple providers:
+  - Ollama
+  - OpenRouter
+- Unified prompt handling across providers
+- Improved provider-based architecture for future extensions
+
+### Fixed
+
+- Prevented missing summaries when switching providers
+- Fixed provider fallback behavior
+
 ## [1.5.0] - 2026-04-24
 
 ### Added
