@@ -21,6 +21,7 @@ interface YTranscriptSettings {
 	provider: "ollama" | "openrouter" | "openai";
 	model: string;
 	availableModels: string[];
+	lastModelsByProvider: Record<string, string>;
 	ollamaBaseUrl: string;
 	openRouterApiKey: string;
 	openAIApiKey: string;
@@ -37,6 +38,7 @@ const DEFAULT_SETTINGS: YTranscriptSettings = {
 	provider: "ollama",
 	model: "qwen2.5:3b",
 	availableModels: [],
+	lastModelsByProvider: {},
 	ollamaBaseUrl: "http://localhost:11434",
 	openRouterApiKey: "",
 	openAIApiKey: "",
@@ -199,9 +201,18 @@ class YTranslateSettingTab extends PluginSettingTab {
 					.addOption("openai", "OpenAI")
 					.setValue(this.plugin.settings.provider)
 					.onChange(async (value) => {
+						const previousProvider = this.plugin.settings.provider;
+						if (this.plugin.settings.model) {
+							this.plugin.settings.lastModelsByProvider[previousProvider] = this.plugin.settings.model;
+						}
+
 						this.plugin.settings.provider = value as any;
 						this.plugin.settings.availableModels = [];
+						this.plugin.settings.model = this.plugin.settings.lastModelsByProvider[value] || "";
 						await this.plugin.saveSettings();
+						this.display();
+
+						await this.loadAndStoreModels({ silent: true });
 						this.display();
 					}),
 			);
@@ -212,11 +223,7 @@ class YTranslateSettingTab extends PluginSettingTab {
 			.addButton((button) =>
 				button.setButtonText("Load Models").onClick(async () => {
 					try {
-						new Notice("Loading models…");
-						const models = await this.loadModelsForCurrentProvider();
-						this.plugin.settings.availableModels = models;
-						await this.plugin.saveSettings();
-						new Notice(`Loaded ${models.length} models.`);
+						await this.loadAndStoreModels({ silent: false });
 						this.display();
 					} catch (error) {
 						console.error("Failed to load models:", error);
@@ -227,21 +234,16 @@ class YTranslateSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Model")
-			.setDesc("Selected model. It only changes when you select another model.")
+			.setDesc("Select a model. No default is set when provider changes.")
 			.addDropdown((dropdown) => {
-				const modelSet = new Set<string>();
+				// Placeholder option (no model selected)
+				dropdown.addOption("", "— Select model —");
 
-				if (this.plugin.settings.model) {
-					modelSet.add(this.plugin.settings.model);
-				}
+				const modelSet = new Set<string>();
 
 				this.plugin.settings.availableModels.forEach((model) => {
 					modelSet.add(model);
 				});
-
-				if (modelSet.size === 0) {
-					modelSet.add(DEFAULT_SETTINGS.model);
-				}
 
 				Array.from(modelSet)
 					.sort((a, b) => a.localeCompare(b))
@@ -250,9 +252,16 @@ class YTranslateSettingTab extends PluginSettingTab {
 					});
 
 				dropdown
-					.setValue(this.plugin.settings.model)
+					.setValue(this.plugin.settings.model || "")
 					.onChange(async (value) => {
-						this.plugin.settings.model = value;
+						this.plugin.settings.model = value; // can be empty
+
+						if (value) {
+							this.plugin.settings.lastModelsByProvider[this.plugin.settings.provider] = value;
+						} else {
+							delete this.plugin.settings.lastModelsByProvider[this.plugin.settings.provider];
+						}
+
 						await this.plugin.saveSettings();
 					});
 			});
@@ -330,6 +339,28 @@ class YTranslateSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}),
 			);
+	}
+
+	private async loadAndStoreModels(options: { silent: boolean }): Promise<void> {
+		try {
+			if (!options.silent) {
+				new Notice("Loading models…");
+			}
+
+			const models = await this.loadModelsForCurrentProvider();
+			this.plugin.settings.availableModels = models;
+			await this.plugin.saveSettings();
+
+			if (!options.silent) {
+				new Notice(`Loaded ${models.length} models.`);
+			}
+		} catch (error) {
+			if (!options.silent) {
+				throw error;
+			}
+
+			console.warn("Auto-loading models failed:", error);
+		}
 	}
 
 	private async loadModelsForCurrentProvider(): Promise<string[]> {

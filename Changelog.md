@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.9.0] - 2026-04-24
+
+### Added
+
+- Streaming summary generation for Ollama, OpenRouter and OpenAI.
+- Live note updates while the LLM summary is being generated.
+- Remember last selected model per provider.
+- Automatically opens plugin settings when no model is selected.
+
+### Changed
+
+- Provider switching now clears invalid model selections.
+- Model dropdown no longer carries models across providers.
+- Models are auto-loaded in the background when switching providers.
+- Final output is re-rendered after streaming completes.
+
+### Fixed
+
+- Fixed broken YAML frontmatter during streaming.
+- Fixed API errors caused by stale model selections from another provider.
+- Fixed missing model guard before starting summary generation.
+
 ## [1.8.0] - 2026-04-24
 
 ### Added

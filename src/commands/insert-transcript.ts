@@ -108,29 +108,76 @@ export class InsertTranscriptCommand {
 				createdAt: new Date().toISOString().slice(0, 10),
 			};
 
-			// Generate summary via LLM
-			const summaryText = await this.summarizationService.summarize(fullText, {
-				language: summaryLanguage,
-				provider: this.plugin.settings?.provider,
-				model: this.plugin.settings?.model,
-				ollamaBaseUrl: this.plugin.settings?.ollamaBaseUrl,
-				openRouterApiKey: this.plugin.settings?.openRouterApiKey,
-				openAIApiKey: this.plugin.settings?.openAIApiKey,
-				promptTemplate,
-				videoTitle: metadata.videoTitle,
-				sourceUrl: metadata.sourceUrl,
-				videoId: metadata.videoId,
-				llmProvider: metadata.llmProvider,
-				modelName: metadata.modelName,
-				createdAt: metadata.createdAt,
-			});
-
-			// Format transcript
+			// Format transcript before streaming so live output can include it.
 			const formatOptions = this.mergeFormatOptions(options);
 			const formattedTranscript = TranscriptFormatter.format(
 				transcript,
 				url,
 				formatOptions,
+			);
+
+			let currentOutputEnd = editor.offsetToPos(
+				editor.posToOffset(insertionStart) + loadingText.length,
+			);
+			let lastStreamUpdate = 0;
+			let streamedSummaryText = "";
+
+			// Guard: ensure a model is selected
+			const selectedModel = this.plugin.settings?.model;
+			if (!selectedModel) {
+				new Notice("Please select a model in Settings before generating a summary.");
+				this.openPluginSettings();
+
+				const errorText = [
+					"## Summary",
+					"No model selected. Please choose a model in plugin settings.",
+					"",
+					"## Transcript",
+					formattedTranscript,
+					"",
+				].join("\n");
+
+				editor.replaceRange(errorText, insertionStart, currentOutputEnd);
+				return;
+			}
+
+			// Generate summary via LLM stream.
+			const summaryText = await this.summarizationService.summarizeStream(
+				fullText,
+				{
+					language: summaryLanguage,
+					provider: this.plugin.settings?.provider,
+					model: this.plugin.settings?.model,
+					ollamaBaseUrl: this.plugin.settings?.ollamaBaseUrl,
+					openRouterApiKey: this.plugin.settings?.openRouterApiKey,
+					openAIApiKey: this.plugin.settings?.openAIApiKey,
+					promptTemplate,
+					videoTitle: metadata.videoTitle,
+					sourceUrl: metadata.sourceUrl,
+					videoId: metadata.videoId,
+					llmProvider: metadata.llmProvider,
+					modelName: metadata.modelName,
+					createdAt: metadata.createdAt,
+				},
+				async (_chunk, fullSummary) => {
+					streamedSummaryText = fullSummary;
+					const now = Date.now();
+
+					if (now - lastStreamUpdate < 250) {
+						return;
+					}
+
+					lastStreamUpdate = now;
+					const liveOutput = this.buildOutput(
+						streamedSummaryText || "Generating summary…",
+						formattedTranscript,
+						metadata,
+					);
+					editor.replaceRange(liveOutput, insertionStart, currentOutputEnd);
+					currentOutputEnd = editor.offsetToPos(
+						editor.posToOffset(insertionStart) + liveOutput.length,
+					);
+				},
 			);
 
 			// Combine properties, summary and transcript
@@ -142,10 +189,7 @@ export class InsertTranscriptCommand {
 
 			if (!output.trim()) return;
 
-			const insertionEnd = editor.offsetToPos(
-				editor.posToOffset(insertionStart) + loadingText.length,
-			);
-			editor.replaceRange(output, insertionStart, insertionEnd);
+			editor.replaceRange(output, insertionStart, currentOutputEnd);
 			await this.renameActiveNote(metadata.videoTitle);
 			new Notice("YouTube summary inserted.");
 		} catch (error) {
@@ -153,6 +197,12 @@ export class InsertTranscriptCommand {
 			new Notice("Failed to generate YouTube summary. Check developer console.");
 			console.error("Insert transcript failed:", error);
 		}
+	}
+
+	private openPluginSettings(): void {
+		const app = this.plugin.app as any;
+		app.setting?.open?.();
+		app.setting?.openTabById?.(this.plugin.manifest.id);
 	}
 
 	/**
@@ -277,17 +327,25 @@ export class InsertTranscriptCommand {
 			metadata,
 		);
 
-		const frontmatterMatch = hydratedSummary.match(/^---\n[\s\S]*?\n---\n?/);
-		const rawFrontmatter = frontmatterMatch?.[0]?.trim();
-		const rawSummaryBody = rawFrontmatter
-			? hydratedSummary.slice(rawFrontmatter.length).trim()
-			: hydratedSummary;
+		// 👉 Finde erste Markdown-Überschrift (# ...)
+		const summaryStartIndex = this.findFirstMarkdownHeadingIndex(hydratedSummary);
+
+		const rawFrontmatter =
+			summaryStartIndex > 0
+				? hydratedSummary.slice(0, summaryStartIndex).trim()
+				: undefined;
+
+		const rawSummaryBody =
+			summaryStartIndex >= 0
+				? hydratedSummary.slice(summaryStartIndex).trim()
+				: hydratedSummary.replace(/^---[\s\S]*?---\s*/, "").trim();
 
 		const frontmatter = this.buildFrontmatter(rawFrontmatter, metadata);
+
 		const parts: string[] = [frontmatter, ""];
 
 		parts.push(
-			rawSummaryBody,
+			rawSummaryBody || "Generating summary…",
 			"",
 			"## Transcript",
 			formattedTranscript,
@@ -295,6 +353,15 @@ export class InsertTranscriptCommand {
 		);
 
 		return parts.join("\n");
+	}
+
+	private findFirstMarkdownHeadingIndex(content: string): number {
+		const match = content.match(/(^|\n)#{1,6}\s/);
+		if (!match || match.index === undefined) return -1;
+
+		return content[match.index] === "\n"
+			? match.index + 1
+			: match.index;
 	}
 
 	private replaceMetadataPlaceholders(
