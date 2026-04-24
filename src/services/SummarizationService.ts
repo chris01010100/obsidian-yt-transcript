@@ -4,6 +4,7 @@ export interface SummarizationOptions {
     model?: string;
     ollamaBaseUrl?: string;
     openRouterApiKey?: string;
+    openAIApiKey?: string;
     promptTemplate?: string;
     videoTitle?: string;
     sourceUrl?: string;
@@ -19,7 +20,7 @@ interface OllamaGenerateResponse {
     error?: string;
 }
 
-interface OpenRouterChatResponse {
+interface ChatCompletionResponse {
     choices?: Array<{
         message?: {
             content?: string;
@@ -69,6 +70,15 @@ export class SummarizationService {
                 language,
                 model: options?.model || "openai/gpt-4o-mini",
                 apiKey: options?.openRouterApiKey || "",
+                ...metadata,
+            });
+        }
+
+        if (provider === "openai") {
+            return this.summarizeWithOpenAI(text, {
+                language,
+                model: options?.model || "gpt-4o-mini",
+                apiKey: options?.openAIApiKey || "",
                 ...metadata,
             });
         }
@@ -163,13 +173,64 @@ export class SummarizationService {
             throw new Error(`OpenRouter request failed: ${response.status} ${response.statusText}`);
         }
 
-        const data = (await response.json()) as OpenRouterChatResponse;
+        const data = (await response.json()) as ChatCompletionResponse;
 
         if (data.error?.message) {
             throw new Error(`OpenRouter error: ${data.error.message}`);
         }
 
         return data.choices?.[0]?.message?.content?.trim() || "[Empty summary returned by OpenRouter]";
+    }
+
+    private async summarizeWithOpenAI(
+        text: string,
+        options: {
+            language: string;
+            model: string;
+            apiKey: string;
+            promptTemplate?: string;
+            videoTitle?: string;
+            sourceUrl?: string;
+            videoId?: string;
+            llmProvider?: string;
+            modelName?: string;
+            createdAt?: string;
+        },
+    ): Promise<string> {
+        if (!options.apiKey.trim()) {
+            throw new Error("OpenAI API key is missing.");
+        }
+
+        const prompt = this.buildPrompt(text, options.language, options);
+
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${options.apiKey}`,
+            },
+            body: JSON.stringify({
+                model: options.model,
+                messages: [
+                    {
+                        role: "user",
+                        content: prompt,
+                    },
+                ],
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`OpenAI request failed: ${response.status} ${response.statusText}`);
+        }
+
+        const data = (await response.json()) as ChatCompletionResponse;
+
+        if (data.error?.message) {
+            throw new Error(`OpenAI error: ${data.error.message}`);
+        }
+
+        return data.choices?.[0]?.message?.content?.trim() || "[Empty summary returned by OpenAI]";
     }
 
     private buildPrompt(

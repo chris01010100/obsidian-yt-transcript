@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.7.0] - 2026-04-24
+
+### Added
+
+- Full OpenAI integration for LLM summarization
+- Support for OpenAI API key authentication
+- Chat-based completions via `/v1/chat/completions`
+- Dynamic model selection using OpenAI model list
+- Metadata injection into OpenAI prompts:
+  - `{{VIDEO_TITLE}}`
+  - `{{SOURCE_URL}}`
+  - `{{VIDEO_ID}}`
+  - `{{LLM_PROVIDER}}`
+  - `{{MODEL_NAME}}`
+  - `{{CREATED_AT}}`
+
+### Changed
+
+- SummarizationService now supports three providers:
+  - Ollama (local)
+  - OpenRouter (multi-model cloud)
+  - OpenAI (direct API)
+- Unified provider architecture with shared prompt pipeline
+- Consistent response parsing across all providers
+
+### Fixed
+
+- Fixed missing API key handling for OpenAI provider
+- Fixed inconsistent provider switching behavior
+
 ## [1.6.0] - 2026-04-24
 
 ### Added

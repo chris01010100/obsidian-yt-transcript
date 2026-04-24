@@ -115,6 +115,7 @@ export class InsertTranscriptCommand {
 				model: this.plugin.settings?.model,
 				ollamaBaseUrl: this.plugin.settings?.ollamaBaseUrl,
 				openRouterApiKey: this.plugin.settings?.openRouterApiKey,
+				openAIApiKey: this.plugin.settings?.openAIApiKey,
 				promptTemplate,
 				videoTitle: metadata.videoTitle,
 				sourceUrl: metadata.sourceUrl,
