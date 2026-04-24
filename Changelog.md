@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.8.0] - 2026-04-24
+
+### Added
+
+- "Insert YouTube transcript" command now works without an active note.
+- Automatically creates a new note when no Markdown editor is active.
+- Added `Output Folder` setting for newly created YouTube summary notes.
+
+### Changed
+
+- Removed the sidebar-based URL prompt workflow from the command palette.
+- "Insert YouTube transcript" is now the main workflow for transcript + summary generation.
+- New notes are created in the configured output folder instead of always using the vault root.
+
+### Fixed
+
+- Fixed issue where only the sidebar command was available when no note was open.
+
 ## [1.7.0] - 2026-04-24
 
 ### Added

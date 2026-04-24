@@ -25,6 +25,7 @@ interface YTranscriptSettings {
 	openRouterApiKey: string;
 	openAIApiKey: string;
 	promptFilePath: string;
+	outputFolder: string;
 	leafUrls: string[];
 }
 
@@ -40,6 +41,7 @@ const DEFAULT_SETTINGS: YTranscriptSettings = {
 	openRouterApiKey: "",
 	openAIApiKey: "",
 	promptFilePath: "",
+	outputFolder: "",
 	leafUrls: [],
 };
 
@@ -67,27 +69,33 @@ export default class YTranscriptPlugin extends Plugin {
 			},
 		});
 
-		this.addCommand({
-			id: "transcript-from-prompt",
-			name: "Get YouTube transcript from url prompt",
-			callback: async () => {
-				const prompt = new PromptModal();
-				const result = await new Promise<PromptModalResult>((resolve) =>
-					prompt.openAndGetValue(resolve, () => { }),
-				);
-
-				if (result?.url) {
-					this.openView(result.url, result.summaryLanguage);
-				}
-			},
-		});
 
 		// New mobile-first command
 		this.addCommand({
 			id: "insert-youtube-transcript",
 			name: "Insert YouTube transcript",
-			editorCallback: async (editor: Editor, _: MarkdownView) => {
-				await this.insertTranscriptCommand.execute(editor);
+			callback: async () => {
+				let view = this.app.workspace.getActiveViewOfType(MarkdownView);
+
+				// If no active markdown view → create a new note
+				if (!view) {
+					const outputFolder = this.settings.outputFolder.trim();
+					const folderPrefix = outputFolder ? `${outputFolder.replace(/\/$/, "")}/` : "";
+					const file = await this.app.vault.create(
+						`${folderPrefix}YouTube Transcript ${Date.now()}.md`,
+						""
+					);
+
+					await this.app.workspace.getLeaf(true).openFile(file);
+					view = this.app.workspace.getActiveViewOfType(MarkdownView);
+				}
+
+				if (!view) {
+					new Notice("No editor available.");
+					return;
+				}
+
+				await this.insertTranscriptCommand.execute(view.editor);
 			},
 		});
 
@@ -294,6 +302,19 @@ class YTranslateSettingTab extends PluginSettingTab {
 					.setPlaceholder("Prompts/youtube-summary.md")
 					.onChange(async (value) => {
 						this.plugin.settings.promptFilePath = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Output Folder")
+			.setDesc("Vault folder for newly created YouTube summary notes. Leave empty for vault root.")
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.outputFolder)
+					.setPlaceholder("04_Resources/YouTube")
+					.onChange(async (value) => {
+						this.plugin.settings.outputFolder = value.trim();
 						await this.plugin.saveSettings();
 					}),
 			);
