@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.10.0] - 2026-04-25
+
+### Added
+
+- Automatic extraction of generated tags from the LLM summary body.
+- Generated tags are now written into the YAML frontmatter.
+- Optional `video_type` extraction from generated category metadata.
+
+### Changed
+
+- User prompt files no longer need to include YAML frontmatter, technical metadata or `{{TRANSCRIPT}}`.
+- Plugin now builds Obsidian Properties independently from LLM output.
+- Prompt handling is more publish-friendly and easier for users to customize.
+
+### Fixed
+
+- Fixed generated tags appearing in the summary body instead of frontmatter.
+- Fixed fragile YAML/frontmatter handling when using streaming output.
+- Reduced risk of broken Obsidian Properties caused by LLM formatting.
+
 ## [1.9.0] - 2026-04-24
 
 ### Added

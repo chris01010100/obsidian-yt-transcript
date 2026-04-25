@@ -505,35 +505,49 @@ export class SummarizationService {
         language: string,
         metadata: PromptMetadata,
     ): string {
-        const promptTemplate = metadata.promptTemplate;
-        if (promptTemplate?.trim()) {
-            return promptTemplate
-                .split("{{language}}").join(language)
-                .split("{{LANGUAGE}}").join(language)
-                .split("{{transcript}}").join(text)
-                .split("{{TRANSCRIPT}}").join(text)
-                .split("{{video_title}}").join(metadata.videoTitle || "")
-                .split("{{source_url}}").join(metadata.sourceUrl || "")
-                .split("{{video_id}}").join(metadata.videoId || "")
-                .split("{{llm_provider}}").join(metadata.llmProvider || "")
-                .split("{{model_name}}").join(metadata.modelName || "")
-                .split("{{created_at}}").join(metadata.createdAt || "")
-                .split("{{VIDEO_TITLE}}").join(metadata.videoTitle || "")
-                .split("{{SOURCE_URL}}").join(metadata.sourceUrl || "")
-                .split("{{VIDEO_ID}}").join(metadata.videoId || "")
-                .split("{{LLM_PROVIDER}}").join(metadata.llmProvider || "")
-                .split("{{MODEL_NAME}}").join(metadata.modelName || "")
-                .split("{{CREATED_AT}}").join(metadata.createdAt || "");
-        }
+        const userInstructions = metadata.promptTemplate?.trim()
+            ? this.replaceMetadataPlaceholders(metadata.promptTemplate.trim(), language, metadata)
+            : [
+                "Create a clear, structured Markdown summary of the following YouTube transcript.",
+                "Focus on the key ideas, important details, named entities, practical steps and open questions.",
+            ].join("\n");
 
         return [
-            `Summarize the following YouTube transcript in ${language}.`,
-            "Write a concise but useful summary.",
-            "Focus on the key points and main events.",
-            "Do not mention that this is a transcript unless necessary.",
+            "You are a precise YouTube transcript summarization assistant.",
+            "Return only Markdown body content.",
+            "Do not include YAML frontmatter.",
+            "Do not include Obsidian Properties.",
+            "Do not include metadata fields like title, source_url, video_id, llm_provider or created_at.",
+            "Do not explain what you are doing.",
+            `Write the summary in this language: ${language}.`,
+            "",
+            "User summary instructions:",
+            userInstructions,
             "",
             "Transcript:",
             text,
         ].join("\n");
+    }
+
+    private replaceMetadataPlaceholders(
+        content: string,
+        language: string,
+        metadata: PromptMetadata,
+    ): string {
+        return content
+            .split("{{language}}").join(language)
+            .split("{{LANGUAGE}}").join(language)
+            .split("{{video_title}}").join(metadata.videoTitle || "")
+            .split("{{source_url}}").join(metadata.sourceUrl || "")
+            .split("{{video_id}}").join(metadata.videoId || "")
+            .split("{{llm_provider}}").join(metadata.llmProvider || "")
+            .split("{{model_name}}").join(metadata.modelName || "")
+            .split("{{created_at}}").join(metadata.createdAt || "")
+            .split("{{VIDEO_TITLE}}").join(metadata.videoTitle || "")
+            .split("{{SOURCE_URL}}").join(metadata.sourceUrl || "")
+            .split("{{VIDEO_ID}}").join(metadata.videoId || "")
+            .split("{{LLM_PROVIDER}}").join(metadata.llmProvider || "")
+            .split("{{MODEL_NAME}}").join(metadata.modelName || "")
+            .split("{{CREATED_AT}}").join(metadata.createdAt || "");
     }
 }

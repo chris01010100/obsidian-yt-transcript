@@ -322,46 +322,115 @@ export class InsertTranscriptCommand {
 		formattedTranscript: string,
 		metadata: VideoMetadata,
 	): string {
-		const hydratedSummary = this.replaceMetadataPlaceholders(
-			summaryText.trim(),
-			metadata,
+		const cleanedSummary = this.cleanSummaryBody(
+			this.replaceMetadataPlaceholders(summaryText.trim(), metadata),
 		);
 
-		// 👉 Finde erste Markdown-Überschrift (# ...)
-		const summaryStartIndex = this.findFirstMarkdownHeadingIndex(hydratedSummary);
+		const extracted = this.extractBodyMetadata(cleanedSummary);
+		const frontmatter = this.buildFrontmatter(
+			metadata,
+			extracted.tags,
+			extracted.videoType,
+		);
 
-		const rawFrontmatter =
-			summaryStartIndex > 0
-				? hydratedSummary.slice(0, summaryStartIndex).trim()
-				: undefined;
-
-		const rawSummaryBody =
-			summaryStartIndex >= 0
-				? hydratedSummary.slice(summaryStartIndex).trim()
-				: hydratedSummary.replace(/^---[\s\S]*?---\s*/, "").trim();
-
-		const frontmatter = this.buildFrontmatter(rawFrontmatter, metadata);
-
-		const parts: string[] = [frontmatter, ""];
-
-		parts.push(
-			rawSummaryBody || "Generating summary…",
+		return [
+			frontmatter,
+			"",
+			extracted.content || "Generating summary…",
 			"",
 			"## Transcript",
 			formattedTranscript,
 			"",
-		);
-
-		return parts.join("\n");
+		].join("\n");
 	}
 
-	private findFirstMarkdownHeadingIndex(content: string): number {
-		const match = content.match(/(^|\n)#{1,6}\s/);
-		if (!match || match.index === undefined) return -1;
+	private extractBodyMetadata(content: string): {
+		content: string;
+		tags: string[];
+		videoType?: string;
+	} {
+		const tags = new Set<string>(["youtube", "transcript"]);
+		const outputLines: string[] = [];
+		const lines = content.split("\n");
+		let videoType: string | undefined;
+		let isInsideTagsSection = false;
 
-		return content[match.index] === "\n"
-			? match.index + 1
-			: match.index;
+		const addTagsFromText = (tagText: string) => {
+			tagText
+				.split(/[\n,]+/)
+				.map((tag) => tag.replace(/^\s*[-*]\s*/, ""))
+				.map((tag) => tag.replace(/^#/, ""))
+				.map((tag) => tag.trim())
+				.filter(Boolean)
+				.forEach((tag) => tags.add(tag));
+		};
+
+		const isHeadingLine = (line: string) => /^#{1,6}\s+/.test(line.trim());
+		const isBoldLabelLine = (line: string) => /^\*{0,2}[A-ZÄÖÜ][^\n]*\*{0,2}\s*$/.test(line.trim());
+
+		for (const line of lines) {
+			const trimmedLine = line.trim();
+			const normalizedLine = trimmedLine.replace(/\s{2,}$/, "");
+
+			const inlineTagsMatch = normalizedLine.match(
+				/^(?:#{1,6}\s*)?\*{0,2}Tags?\*{0,2}:\s*(.+)$/i,
+			);
+
+			if (inlineTagsMatch?.[1]) {
+				addTagsFromText(inlineTagsMatch[1]);
+				isInsideTagsSection = false;
+				continue;
+			}
+
+			const tagSectionHeaderMatch = normalizedLine.match(
+				/^(?:#{1,6}\s*)?\*{0,2}Tags?\*{0,2}\s*$/i,
+			);
+
+			if (tagSectionHeaderMatch) {
+				isInsideTagsSection = true;
+				continue;
+			}
+
+			if (isInsideTagsSection) {
+				if (!trimmedLine) {
+					isInsideTagsSection = false;
+					continue;
+				}
+
+				if (isHeadingLine(trimmedLine) || isBoldLabelLine(trimmedLine)) {
+					isInsideTagsSection = false;
+					outputLines.push(line);
+					continue;
+				}
+
+				addTagsFromText(trimmedLine);
+				continue;
+			}
+
+			const categoryMatch = normalizedLine.match(
+				/^\*{0,2}Kategorie\*{0,2}:\s*(.+)$/i,
+			);
+
+			if (categoryMatch?.[1]) {
+				videoType = categoryMatch[1].trim();
+				continue;
+			}
+
+			outputLines.push(line);
+		}
+
+		return {
+			content: outputLines.join("\n").trim(),
+			tags: Array.from(tags),
+			videoType,
+		};
+	}
+
+	private cleanSummaryBody(content: string): string {
+		return content
+			.replace(/^---[\s\S]*?---\s*/, "")
+			.replace(/\n---\s*$/g, "")
+			.trim();
 	}
 
 	private replaceMetadataPlaceholders(
@@ -386,65 +455,23 @@ export class InsertTranscriptCommand {
 	}
 
 	private buildFrontmatter(
-		rawFrontmatter: string | undefined,
 		metadata: VideoMetadata,
+		tags: string[],
+		videoType?: string,
 	): string {
-		let frontmatterBody = rawFrontmatter
-			? rawFrontmatter.replace(/^---\n?/, "").replace(/\n?---$/, "")
-			: "";
-
-		frontmatterBody = this.upsertFrontmatterField(
-			frontmatterBody,
-			"title",
-			this.quoteYaml(metadata.videoTitle),
-		);
-		frontmatterBody = this.upsertFrontmatterField(
-			frontmatterBody,
-			"source_url",
-			this.quoteYaml(metadata.sourceUrl),
-		);
-		frontmatterBody = this.upsertFrontmatterField(
-			frontmatterBody,
-			"video_id",
-			this.quoteYaml(metadata.videoId),
-		);
-		frontmatterBody = this.upsertFrontmatterField(
-			frontmatterBody,
-			"language",
-			metadata.summaryLanguage,
-		);
-		frontmatterBody = this.upsertFrontmatterField(
-			frontmatterBody,
-			"llm_provider",
-			metadata.llmProvider,
-		);
-		frontmatterBody = this.upsertFrontmatterField(
-			frontmatterBody,
-			"llm_model",
-			this.quoteYaml(metadata.modelName),
-		);
-		frontmatterBody = this.upsertFrontmatterField(
-			frontmatterBody,
-			"created_at",
-			metadata.createdAt,
-		);
-
-		return `---\n${frontmatterBody.trim()}\n---`;
-	}
-
-	private upsertFrontmatterField(
-		frontmatterBody: string,
-		key: string,
-		value: string,
-	): string {
-		const fieldPattern = new RegExp(`^${key}:.*$`, "m");
-		const line = `${key}: ${value}`;
-
-		if (fieldPattern.test(frontmatterBody)) {
-			return frontmatterBody.replace(fieldPattern, line);
-		}
-
-		return `${frontmatterBody.trim()}\n${line}`.trim();
+		return [
+			"---",
+			`title: ${this.quoteYaml(metadata.videoTitle)}`,
+			`source_url: ${this.quoteYaml(metadata.sourceUrl)}`,
+			`video_id: ${this.quoteYaml(metadata.videoId)}`,
+			`language: ${metadata.summaryLanguage}`,
+			`llm_provider: ${metadata.llmProvider}`,
+			`llm_model: ${this.quoteYaml(metadata.modelName)}`,
+			`created_at: ${metadata.createdAt}`,
+			`tags: [${tags.map((tag) => this.quoteYaml(tag)).join(", ")}]`,
+			videoType ? `video_type: ${this.quoteYaml(videoType)}` : undefined,
+			"---",
+		].filter(Boolean).join("\n");
 	}
 
 	private quoteYaml(value: string): string {
