@@ -18,14 +18,12 @@ export interface InsertTranscriptOptions {
 
 interface PromptInputResult {
 	url: string;
-	summaryLanguage: string;
 }
 
 interface VideoMetadata {
 	videoTitle: string;
 	sourceUrl: string;
 	videoId: string;
-	summaryLanguage: string;
 	llmProvider: string;
 	modelName: string;
 	createdAt: string;
@@ -57,19 +55,19 @@ export class InsertTranscriptCommand {
 				return; // User cancelled or no URL found
 			}
 
-			const { url, summaryLanguage } = promptInput;
+			const { url } = promptInput;
 			new Notice("Generating YouTube summary…");
 			const insertionStart = editor.getCursor();
 			const loadingText = [
-				`## Summary (${summaryLanguage})`,
+				`## Summary`,
 				"Generating summary…",
 				"",
 				"## Transcript",
 				"Loading transcript…",
 				"",
 			].join("\n");
+
 			editor.replaceRange(loadingText, insertionStart);
-			console.log("Insert transcript summary language:", summaryLanguage);
 
 			// Validate URL
 			if (!URLDetector.isValidYouTubeUrl(url)) {
@@ -102,7 +100,6 @@ export class InsertTranscriptCommand {
 				videoTitle: transcript.title || "Untitled YouTube Video",
 				sourceUrl: url,
 				videoId: this.extractVideoId(url),
-				summaryLanguage,
 				llmProvider: this.plugin.settings?.provider || "ollama",
 				modelName: this.plugin.settings?.model || "",
 				createdAt: new Date().toISOString().slice(0, 10),
@@ -145,7 +142,6 @@ export class InsertTranscriptCommand {
 			const summaryText = await this.summarizationService.summarizeStream(
 				fullText,
 				{
-					language: summaryLanguage,
 					provider: this.plugin.settings?.provider,
 					model: this.plugin.settings?.model,
 					ollamaBaseUrl: this.plugin.settings?.ollamaBaseUrl,
@@ -228,7 +224,6 @@ export class InsertTranscriptCommand {
 
 			return {
 				url: result.url.trim(),
-				summaryLanguage: result.summaryLanguage,
 			};
 		} catch (error) {
 			// User cancelled
@@ -354,12 +349,15 @@ export class InsertTranscriptCommand {
 		const lines = content.split("\n");
 		let videoType: string | undefined;
 		let isInsideTagsSection = false;
+		let previousOutputWasDivider = false;
 
 		const addTagsFromText = (tagText: string) => {
 			tagText
+				.replace(/^`+|`+$/g, "")
 				.split(/[\n,]+/)
 				.map((tag) => tag.replace(/^\s*[-*]\s*/, ""))
-				.map((tag) => tag.replace(/^#/, ""))
+				.map((tag) => tag.replace(/^#+/, ""))
+				.map((tag) => tag.replace(/`/g, ""))
 				.map((tag) => tag.trim())
 				.filter(Boolean)
 				.forEach((tag) => tags.add(tag));
@@ -367,6 +365,11 @@ export class InsertTranscriptCommand {
 
 		const isHeadingLine = (line: string) => /^#{1,6}\s+/.test(line.trim());
 		const isBoldLabelLine = (line: string) => /^\*{0,2}[A-ZÄÖÜ][^\n]*\*{0,2}\s*$/.test(line.trim());
+		const isDividerLine = (line: string) => /^---\s*$/.test(line.trim());
+		const isInlineCodeTagList = (line: string) => {
+			const value = line.trim();
+			return /^`[^`]+`$/.test(value) && value.includes(",");
+		};
 
 		for (const line of lines) {
 			const trimmedLine = line.trim();
@@ -391,6 +394,17 @@ export class InsertTranscriptCommand {
 				continue;
 			}
 
+			if (isInlineCodeTagList(normalizedLine)) {
+				addTagsFromText(normalizedLine);
+
+				if (previousOutputWasDivider) {
+					outputLines.pop();
+					previousOutputWasDivider = false;
+				}
+
+				continue;
+			}
+
 			if (isInsideTagsSection) {
 				if (!trimmedLine) {
 					isInsideTagsSection = false;
@@ -400,6 +414,7 @@ export class InsertTranscriptCommand {
 				if (isHeadingLine(trimmedLine) || isBoldLabelLine(trimmedLine)) {
 					isInsideTagsSection = false;
 					outputLines.push(line);
+					previousOutputWasDivider = isDividerLine(line);
 					continue;
 				}
 
@@ -417,6 +432,7 @@ export class InsertTranscriptCommand {
 			}
 
 			outputLines.push(line);
+			previousOutputWasDivider = isDividerLine(line);
 		}
 
 		return {
@@ -441,14 +457,14 @@ export class InsertTranscriptCommand {
 			.split("{{video_title}}").join(metadata.videoTitle)
 			.split("{{source_url}}").join(metadata.sourceUrl)
 			.split("{{video_id}}").join(metadata.videoId)
-			.split("{{language}}").join(metadata.summaryLanguage)
+			.split("{{language}}").join(this.plugin.settings?.lang || "")
 			.split("{{llm_provider}}").join(metadata.llmProvider)
 			.split("{{model_name}}").join(metadata.modelName)
 			.split("{{created_at}}").join(metadata.createdAt)
 			.split("{{VIDEO_TITLE}}").join(metadata.videoTitle)
 			.split("{{SOURCE_URL}}").join(metadata.sourceUrl)
 			.split("{{VIDEO_ID}}").join(metadata.videoId)
-			.split("{{LANGUAGE}}").join(metadata.summaryLanguage)
+			.split("{{LANGUAGE}}").join(this.plugin.settings?.lang || "")
 			.split("{{LLM_PROVIDER}}").join(metadata.llmProvider)
 			.split("{{MODEL_NAME}}").join(metadata.modelName)
 			.split("{{CREATED_AT}}").join(metadata.createdAt);
@@ -464,7 +480,7 @@ export class InsertTranscriptCommand {
 			`title: ${this.quoteYaml(metadata.videoTitle)}`,
 			`source_url: ${this.quoteYaml(metadata.sourceUrl)}`,
 			`video_id: ${this.quoteYaml(metadata.videoId)}`,
-			`language: ${metadata.summaryLanguage}`,
+			`language: ${this.plugin.settings?.lang || ""}`,
 			`llm_provider: ${metadata.llmProvider}`,
 			`llm_model: ${this.quoteYaml(metadata.modelName)}`,
 			`created_at: ${metadata.createdAt}`,

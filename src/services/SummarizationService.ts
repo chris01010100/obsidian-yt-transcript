@@ -62,7 +62,7 @@ interface PromptMetadata {
 
 export class SummarizationService {
     async summarize(text: string, options?: SummarizationOptions): Promise<string> {
-        const language = options?.language || "de";
+        const language = "";
         const provider = options?.provider || "ollama";
 
         const metadata: PromptMetadata = {
@@ -110,7 +110,7 @@ export class SummarizationService {
         options: SummarizationOptions | undefined,
         onChunk: SummaryChunkHandler,
     ): Promise<string> {
-        const language = options?.language || "de";
+        const language = "";
         const provider = options?.provider || "ollama";
 
         const metadata: PromptMetadata = {
@@ -519,7 +519,6 @@ export class SummarizationService {
             "Do not include Obsidian Properties.",
             "Do not include metadata fields like title, source_url, video_id, llm_provider or created_at.",
             "Do not explain what you are doing.",
-            `Write the summary in this language: ${language}.`,
             "",
             "User summary instructions:",
             userInstructions,

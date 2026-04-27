@@ -1,5 +1,56 @@
 # Changelog
 
+## [1.11.0] – 2026-04-25
+
+### ✨ Improvements
+- Prompt-System vereinfacht:
+  - Frontmatter-Regeln entfernt (wird jetzt vollständig im Code erzeugt)
+  - Prompt enthält nur noch Summary-Logik → deutlich verständlicher für Nutzer
+- Summary-Sprache vollständig über Prompt steuerbar (keine UI-Abhängigkeit mehr)
+- Settings UX verbessert:
+  - "Summary Language" aus Settings entfernt
+  - Fokus jetzt nur auf Transcript Language (Language + Country)
+- Model Handling verbessert:
+  - Kein automatischer Model-Fallback beim Provider-Wechsel
+  - Sauberer Zustand ohne "falsches Modell"
+
+### 🧠 UX Enhancements
+- Klarere Trennung zwischen:
+  - Prompt (Inhalt / Struktur)
+  - Plugin (Technik / Output / YAML)
+- Weniger Fehleranfälligkeit bei Custom Prompts
+
+### 🏷️ Tag Handling (Fix + Upgrade)
+- Tags werden jetzt zuverlässig aus dem LLM-Output extrahiert
+- Unterstützung für mehrere Formate:
+  - `Tags: a, b, c`
+  - Markdown-Listen
+  - Inline-Code (`tag1, tag2`)
+- Backticks in Tags werden korrekt entfernt
+- Tags werden jetzt:
+  - ❌ nicht mehr im Body angezeigt
+  - ✅ korrekt im YAML-Header gespeichert
+
+### 🧹 Cleanup
+- Entfernt:
+  - Kategorie-Block im Body
+  - doppelte Tags
+  - Artefakte aus LLM-Output
+
+---
+
+### 🐛 Fixes
+- Fix: Tags wurden teilweise im Body statt im YAML gespeichert
+- Fix: Inline-Code Tags (`\`tag\``) wurden falsch übernommen
+- Fix: Kategorie wurde im falschen Bereich angezeigt
+- Fix: Prompt konnte Plugin-Output brechen (jetzt entkoppelt)
+
+---
+
+### 💡 Developer Notes
+- Output-Generierung jetzt vollständig im Plugin (robuster)
+- Prompt ist jetzt optional + austauschbar ohne Breaking Changes
+
 ## [1.10.0] - 2026-04-25
 
 ### Added

@@ -7,7 +7,6 @@ import {
 
 export type PromptModalResult = {
 	url: string;
-	summaryLanguage: string;
 };
 
 export class PromptModal extends Modal {
@@ -16,7 +15,6 @@ export class PromptModal extends Modal {
 	private submitted = false;
 	private value: string;
 	private initialValue?: string;
-	private summaryLanguage = "de";
 
 	constructor(initialValue?: string) {
 		super(app);
@@ -54,19 +52,6 @@ export class PromptModal extends Modal {
 				text.inputEl.focus();
 			});
 
-		new Setting(this.contentEl)
-			.setName("Summary Language")
-			.addDropdown((dropdown) => {
-				dropdown
-					.addOption("de", "Deutsch")
-					.addOption("en", "English")
-					.addOption("es", "Español")
-					.setValue(this.summaryLanguage)
-					.onChange((value) => {
-						this.summaryLanguage = value;
-					});
-			});
-
 		const buttonDiv = this.modalEl.createDiv();
 		buttonDiv.addClass("modal-button-container");
 
@@ -88,7 +73,6 @@ export class PromptModal extends Modal {
 		evt.preventDefault();
 		this.resolve({
 			url: this.value,
-			summaryLanguage: this.summaryLanguage,
 		});
 		this.close();
 	}

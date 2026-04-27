@@ -17,7 +17,6 @@ interface YTranscriptSettings {
 	timestampMod: number;
 	lang: string;
 	country: string;
-	summaryLanguage: string;
 	provider: "ollama" | "openrouter" | "openai";
 	model: string;
 	availableModels: string[];
@@ -34,7 +33,6 @@ const DEFAULT_SETTINGS: YTranscriptSettings = {
 	timestampMod: 5,
 	lang: "en",
 	country: "EN",
-	summaryLanguage: "de",
 	provider: "ollama",
 	model: "qwen2.5:3b",
 	availableModels: [],
@@ -177,16 +175,13 @@ class YTranslateSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Summary Language")
-			.setDesc("Default language for summaries")
-			.addDropdown((dropdown) =>
-				dropdown
-					.addOption("de", "Deutsch")
-					.addOption("en", "English")
-					.addOption("es", "Español")
-					.setValue(this.plugin.settings.summaryLanguage)
+			.setName("Country")
+			.setDesc("Preferred transcript country code")
+			.addText((text) =>
+				text
+					.setValue(this.plugin.settings.country)
 					.onChange(async (value) => {
-						this.plugin.settings.summaryLanguage = value;
+						this.plugin.settings.country = value;
 						await this.plugin.saveSettings();
 					}),
 			);
@@ -324,18 +319,6 @@ class YTranslateSettingTab extends PluginSettingTab {
 					.setPlaceholder("04_Resources/YouTube")
 					.onChange(async (value) => {
 						this.plugin.settings.outputFolder = value.trim();
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl)
-			.setName("Country")
-			.setDesc("Preferred transcript country code")
-			.addText((text) =>
-				text
-					.setValue(this.plugin.settings.country)
-					.onChange(async (value) => {
-						this.plugin.settings.country = value;
 						await this.plugin.saveSettings();
 					}),
 			);
