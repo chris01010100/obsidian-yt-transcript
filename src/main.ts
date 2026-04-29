@@ -73,7 +73,7 @@ export default class YTranscriptPlugin extends Plugin {
 		// New mobile-first command
 		this.addCommand({
 			id: "insert-youtube-transcript",
-			name: "Insert YouTube transcript",
+			name: "YouTube → AI Summary Note",
 			callback: async () => {
 				let view = this.app.workspace.getActiveViewOfType(MarkdownView);
 

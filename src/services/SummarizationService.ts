@@ -200,7 +200,10 @@ export class SummarizationService {
         });
 
         if (!response.ok) {
-            throw new Error(`Ollama request failed: ${response.status} ${response.statusText}`);
+            const errorText = await this.safeReadResponseText(response);
+            throw new Error(
+                `Ollama request failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+            );
         }
 
         const data = (await response.json()) as OllamaGenerateResponse;
@@ -244,7 +247,14 @@ export class SummarizationService {
         });
 
         if (!response.ok) {
-            throw new Error(`Ollama stream request failed: ${response.status} ${response.statusText}`);
+            const errorText = await this.safeReadResponseText(response);
+            console.warn(
+                `Ollama streaming failed (${response.status} ${response.statusText}). Falling back to non-streaming request.${errorText ? ` Details: ${errorText}` : ""}`,
+            );
+
+            const fallbackSummary = await this.summarizeWithOllama(text, options);
+            await onChunk(fallbackSummary, fallbackSummary);
+            return fallbackSummary;
         }
 
         return this.readJsonLineStream<OllamaStreamChunk>(response, async (chunk, fullText) => {
@@ -301,7 +311,10 @@ export class SummarizationService {
         });
 
         if (!response.ok) {
-            throw new Error(`OpenRouter request failed: ${response.status} ${response.statusText}`);
+            const errorText = await this.safeReadResponseText(response);
+            throw new Error(
+                `OpenRouter request failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+            );
         }
 
         const data = (await response.json()) as ChatCompletionResponse;
@@ -352,7 +365,10 @@ export class SummarizationService {
         });
 
         if (!response.ok) {
-            throw new Error(`OpenAI request failed: ${response.status} ${response.statusText}`);
+            const errorText = await this.safeReadResponseText(response);
+            throw new Error(
+                `OpenAI request failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+            );
         }
 
         const data = (await response.json()) as ChatCompletionResponse;
@@ -408,7 +424,10 @@ export class SummarizationService {
         });
 
         if (!response.ok) {
-            throw new Error(`Chat completions stream request failed: ${response.status} ${response.statusText}`);
+            const errorText = await this.safeReadResponseText(response);
+            throw new Error(
+                `Chat completions stream request failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+            );
         }
 
         return this.readServerSentEventsStream(response, async (chunk, fullText) => {
@@ -423,6 +442,15 @@ export class SummarizationService {
 
             return delta;
         });
+    }
+
+    private async safeReadResponseText(response: Response): Promise<string> {
+        try {
+            return (await response.text()).trim();
+        } catch (error) {
+            console.warn("Failed to read error response body:", error);
+            return "";
+        }
     }
 
     private async readJsonLineStream<T>(
