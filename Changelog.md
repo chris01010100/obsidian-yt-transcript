@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.12.0] – 2026-04-25
+
+### ✨ Verbesserungen
+- Verbesserte Fehlerbehandlung für Ollama:
+  - Detaillierte Fehlermeldungen inkl. Server-Response
+  - Besseres Debugging bei API-Problemen
+- Automatischer Fallback von Streaming → Non-Streaming bei Fehlern (z. B. HTTP 400)
+- Stabilere Zusammenfassungs-Pipeline bei instabilen oder restriktiven Ollama-Setups
+
+### 🧠 UX & Stabilität
+- Robustere Verarbeitung von API-Fehlern ohne Abbruch des gesamten Workflows
+- Zusammenfassung wird auch bei Streaming-Fehlern zuverlässig erzeugt
+
+### 🐛 Fixes
+- Fix: Unklare "400 Bad Request" Fehler bei Ollama werden jetzt korrekt abgefangen und verarbeitet
+- Fix: Streaming-Abbrüche führen nicht mehr zum kompletten Fehlschlag der Zusammenfassung
+
 ## [1.11.0] – 2026-04-25
 
 ### ✨ Improvements
