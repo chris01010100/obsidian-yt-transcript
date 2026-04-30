@@ -310,6 +310,7 @@ export class TranscriptView extends ItemView {
 				model: this.plugin.settings.model,
 				ollamaBaseUrl: this.plugin.settings.ollamaBaseUrl,
 				promptTemplate: await this.loadPromptTemplate(),
+				enableChunking: this.plugin.settings.enableChunking,
 			});
 			console.log("Transcript full text:", fullText.slice(0, 200));
 			console.log("Service summary:", summaryText);

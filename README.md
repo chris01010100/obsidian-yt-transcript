@@ -1,64 +1,51 @@
-# 🚀 Usage
+# YTranscript
 
-## 🧠 AI Summary + Transcript (Main Command)
+Fetch YouTube transcripts and generate AI summary notes directly in Obsidian.
 
-1. Run command:  
-   **"Insert YouTube transcript"** *(current name)*
+## Main command
 
-2. The plugin will:
-   - Detect YouTube URL from:
-     - selected text
-     - clipboard
-     - or manual input
-   - Ask for confirmation
+Run:
+- **YouTube → AI Summary Note**
 
-3. Then automatically:
-   - Fetch transcript
-   - Send it to your selected LLM (Ollama / OpenRouter / OpenAI)
-   - Generate a structured summary
-   - Extract tags
-   - Build a complete Obsidian note
+Flow:
+1. URL wird aus Auswahl/Clipboard erkannt oder manuell eingegeben.
+2. Transcript wird geladen.
+3. LLM-Summary wird erzeugt (Ollama / OpenRouter / OpenAI).
+4. Note wird mit Frontmatter + Summary + Transcript geschrieben.
 
----
+## Output
 
-## 📄 Where does the note go?
+Jede generierte Note enthält:
+- YAML frontmatter (plugin-kontrolliert)
+- Markdown summary (LLM output)
+- extrahierte Tags im YAML
+- vollständiges Transcript
 
-### If an editor is open:
-→ Content is inserted at cursor position
+## Settings
 
-### If NO note is open:
-→ Plugin will:
-- create a new note
-- save it in your configured target folder
-- open the note automatically
-- insert summary + transcript
+- `Language` / `Country` für Transcript-Auswahl
+- `LLM Provider` (`ollama`, `openrouter`, `openai`)
+- `Model`
+- `Ollama Base URL`
+- `OpenRouter API Key`
+- `OpenAI API Key`
+- `Prompt File Path` (optional)
+- `Output Folder` (optional)
+- `Enable Chunking for long transcripts` (neu, Standard: aktiviert)
 
-👉 Works fully without manual note creation
+## Chunking für lange Transcripts
 
----
+Bei langen Texten nutzt der Service einen Map-Reduce-Flow:
+- Transcript wird in Chunks geteilt
+- Pro Chunk wird eine Teilzusammenfassung erzeugt
+- Teilzusammenfassungen werden zu einer finalen Summary zusammengeführt
 
-## 🧾 Output
+Vorteile:
+- stabiler bei Token-Limits
+- bessere Verarbeitung großer Videos
+- bestehender Note-Output bleibt unverändert
 
-Each generated note contains:
+## Verhalten ohne offene Note
 
-- YAML frontmatter (auto-generated)
-- structured summary (from LLM)
-- extracted tags (stored in YAML)
-- transcript with timestamps
-
-👉 Fully Obsidian-ready
-
----
-
-## ⚠️ Command Naming (Important)
-
-Currently:
-- The command is still called:  
-  **"Insert YouTube transcript"**
-
-But it now:
-- generates summaries
-- creates full notes
-- uses LLMs
-
-👉 Renaming is planned (e.g. "Create YouTube summary note")
+Wenn kein Editor offen ist, erstellt das Plugin automatisch eine neue Note
+(im optional konfigurierten `Output Folder`) und schreibt dort den Inhalt.

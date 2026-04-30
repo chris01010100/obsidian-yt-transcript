@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.13.0] – 2026-04-30
+
+### ✨ Verbesserungen
+- Robuste Chunking-Architektur für lange Transcripts (Map-Reduce) integriert.
+- Neue Chunking-Utility eingeführt (`splitIntoChunks`) mit bevorzugten Split-Grenzen:
+  - Absatzgrenzen (`\n\n`)
+  - Satzenden (`.`, `!`, `?`)
+  - Zeilenumbrüche
+  - Hard-Cut als Fallback
+- Hard-coded Chunk-Prompt im Service ergänzt, unabhängig vom User-Prompt.
+- Finale Zusammenfassung bleibt über bestehendes Prompt-Template steuerbar.
+
+### ⚙️ Settings
+- Neues Setting: `Enable Chunking for long transcripts`.
+- Standardwert: `true`.
+- Chunking kann pro Nutzer aktiviert/deaktiviert werden, ohne den restlichen Workflow zu ändern.
+
+### 🧠 Streaming & Stabilität
+- Chunk-Phase läuft non-streaming für stabile Verarbeitung.
+- Finale Reduce-Phase nutzt bestehendes Streaming-Verhalten.
+- Bestehender Output-Builder (YAML + Summary + Transcript) bleibt unverändert.
+
+### 🧪 Tests
+- Neue Unit-Tests für Chunking ergänzt (`tests/transcript-chunker.test.ts`).
+
 ## [1.12.0] – 2026-04-25
 
 ### ✨ Verbesserungen

@@ -154,6 +154,7 @@ export class InsertTranscriptCommand {
 					llmProvider: metadata.llmProvider,
 					modelName: metadata.modelName,
 					createdAt: metadata.createdAt,
+					enableChunking: this.plugin.settings?.enableChunking,
 				},
 				async (_chunk, fullSummary) => {
 					streamedSummaryText = fullSummary;

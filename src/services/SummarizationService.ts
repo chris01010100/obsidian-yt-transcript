@@ -1,3 +1,5 @@
+import { splitIntoChunks } from "../transcript-chunker";
+
 export interface SummarizationOptions {
     language?: string;
     provider?: "ollama" | "openrouter" | "openai";
@@ -12,6 +14,7 @@ export interface SummarizationOptions {
     llmProvider?: string;
     modelName?: string;
     createdAt?: string;
+    enableChunking?: boolean;
 }
 
 export type SummaryChunkHandler = (chunk: string, fullText: string) => void | Promise<void>;
@@ -61,9 +64,22 @@ interface PromptMetadata {
 }
 
 export class SummarizationService {
+    private static readonly MAX_SINGLE_PASS_CHARS = 12000;
+    private static readonly CHUNK_MAX_CHARS = 6000;
+    private static readonly CHUNK_PROMPT = [
+        "Create a concise Markdown summary for this transcript chunk.",
+        "Focus on core facts, key arguments and actionable steps.",
+        "Return only Markdown body content.",
+        "Do not include YAML or metadata fields.",
+    ].join("\n");
+
     async summarize(text: string, options?: SummarizationOptions): Promise<string> {
         const language = "";
         const provider = options?.provider || "ollama";
+
+        if (this.shouldUseChunking(text, options)) {
+            return this.summarizeLargeTextMapReduce(text, options, false);
+        }
 
         const metadata: PromptMetadata = {
             promptTemplate: options?.promptTemplate,
@@ -112,6 +128,10 @@ export class SummarizationService {
     ): Promise<string> {
         const language = "";
         const provider = options?.provider || "ollama";
+
+        if (this.shouldUseChunking(text, options)) {
+            return this.summarizeLargeTextMapReduce(text, options, true, onChunk);
+        }
 
         const metadata: PromptMetadata = {
             promptTemplate: options?.promptTemplate,
@@ -167,6 +187,57 @@ export class SummarizationService {
         const fallback = `[Provider ${provider} not implemented yet]`;
         await onChunk(fallback, fallback);
         return fallback;
+    }
+
+    private shouldUseChunking(text: string, options?: SummarizationOptions): boolean {
+        const enableChunking = options?.enableChunking ?? true;
+        if (!enableChunking) {
+            return false;
+        }
+
+        return text.trim().length > SummarizationService.MAX_SINGLE_PASS_CHARS;
+    }
+
+    private buildChunkedReduceInput(chunkSummaries: string[]): string {
+        return chunkSummaries
+            .map((summary, index) => `### Chunk ${index + 1}\n${summary.trim()}`)
+            .join("\n\n");
+    }
+
+    private async summarizeLargeTextMapReduce(
+        text: string,
+        options: SummarizationOptions | undefined,
+        streamFinal: boolean,
+        onChunk?: SummaryChunkHandler,
+    ): Promise<string> {
+        const chunks = splitIntoChunks(text, SummarizationService.CHUNK_MAX_CHARS);
+        if (chunks.length <= 1) {
+            const noChunkOptions = { ...options, enableChunking: false };
+            if (streamFinal && onChunk) {
+                return this.summarizeStream(text, noChunkOptions, onChunk);
+            }
+
+            return this.summarize(text, noChunkOptions);
+        }
+
+        const chunkSummaries: string[] = [];
+        for (const chunk of chunks) {
+            const chunkSummary = await this.summarize(chunk, {
+                ...options,
+                promptTemplate: SummarizationService.CHUNK_PROMPT,
+                enableChunking: false,
+            });
+            chunkSummaries.push(chunkSummary);
+        }
+
+        const reduceInput = this.buildChunkedReduceInput(chunkSummaries);
+        const finalOptions = { ...options, enableChunking: false };
+
+        if (streamFinal && onChunk) {
+            return this.summarizeStream(reduceInput, finalOptions, onChunk);
+        }
+
+        return this.summarize(reduceInput, finalOptions);
     }
 
     private async summarizeWithOllama(

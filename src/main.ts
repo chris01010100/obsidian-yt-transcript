@@ -26,6 +26,7 @@ interface YTranscriptSettings {
 	openAIApiKey: string;
 	promptFilePath: string;
 	outputFolder: string;
+	enableChunking: boolean;
 	leafUrls: string[];
 }
 
@@ -42,6 +43,7 @@ const DEFAULT_SETTINGS: YTranscriptSettings = {
 	openAIApiKey: "",
 	promptFilePath: "",
 	outputFolder: "",
+	enableChunking: true,
 	leafUrls: [],
 };
 
@@ -319,6 +321,18 @@ class YTranslateSettingTab extends PluginSettingTab {
 					.setPlaceholder("04_Resources/YouTube")
 					.onChange(async (value) => {
 						this.plugin.settings.outputFolder = value.trim();
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Enable Chunking for long transcripts")
+			.setDesc("Recommended for long videos to avoid provider token limits.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableChunking)
+					.onChange(async (value) => {
+						this.plugin.settings.enableChunking = value;
 						await this.plugin.saveSettings();
 					}),
 			);
