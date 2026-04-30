@@ -1,3 +1,4 @@
+import { requestUrl } from "obsidian";
 import { splitIntoChunks } from "../transcript-chunker";
 
 export interface SummarizationOptions {
@@ -258,7 +259,8 @@ export class SummarizationService {
         const prompt = this.buildPrompt(text, options.language, options);
         const baseUrl = options.baseUrl.replace(/\/$/, "");
 
-        const response = await fetch(`${baseUrl}/api/generate`, {
+        const response = await requestUrl({
+            url: `${baseUrl}/api/generate`,
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -270,14 +272,14 @@ export class SummarizationService {
             }),
         });
 
-        if (!response.ok) {
-            const errorText = await this.safeReadResponseText(response);
+        if (response.status >= 400) {
+            const errorText = (response.text || "").trim();
             throw new Error(
-                `Ollama request failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+                `Ollama request failed: ${response.status}${errorText ? ` - ${errorText}` : ""}`,
             );
         }
 
-        const data = (await response.json()) as OllamaGenerateResponse;
+        const data = (response.json as OllamaGenerateResponse) || (JSON.parse(response.text) as OllamaGenerateResponse);
 
         if (data.error) {
             throw new Error(`Ollama error: ${data.error}`);
@@ -305,17 +307,25 @@ export class SummarizationService {
         const prompt = this.buildPrompt(text, options.language, options);
         const baseUrl = options.baseUrl.replace(/\/$/, "");
 
-        const response = await fetch(`${baseUrl}/api/generate`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                model: options.model,
-                prompt,
-                stream: true,
-            }),
-        });
+        let response: Response;
+        try {
+            response = await fetch(`${baseUrl}/api/generate`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    model: options.model,
+                    prompt,
+                    stream: true,
+                }),
+            });
+        } catch (error) {
+            console.warn("Ollama streaming request failed before response. Falling back to non-streaming request.", error);
+            const fallbackSummary = await this.summarizeWithOllama(text, options);
+            await onChunk(fallbackSummary, fallbackSummary);
+            return fallbackSummary;
+        }
 
         if (!response.ok) {
             const errorText = await this.safeReadResponseText(response);

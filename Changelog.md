@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.1] – 2026-04-30
+
+### 🐛 Fixes
+- Ollama non-streaming requests now use Obsidian `requestUrl` to avoid browser CORS issues in chunking map phase.
+- Added defensive fallback in Ollama streaming: on network/CORS fetch failure before response, fallback to non-streaming summarization.
+- Improved Ollama non-streaming error handling with status and response body details.
+
 ## [1.13.0] – 2026-04-30
 
 ### ✨ Verbesserungen
