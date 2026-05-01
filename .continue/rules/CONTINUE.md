@@ -27,7 +27,8 @@ alwaysApply: true
 - `src/main.ts` = plugin bootstrap, settings UI, command registration
 - `src/commands/insert-transcript.ts` = end-to-end workflow command
 - `src/youtube-transcript.ts` + `src/api-parser.ts` = transcript retrieval/parsing
-- `src/services/SummarizationService.ts` = LLM providers + streaming
+- `src/services/SummarizationService.ts` = LLM providers + streaming + chunking map-reduce
+- `src/transcript-chunker.ts` = long-text chunk splitting utility
 - `src/transcript-view.ts` = side view rendering in Obsidian
 
 ---
@@ -91,7 +92,7 @@ npm run check-format
 - `src/api-parser.ts`
   - transcript XML parsing (`<text>` / `<p>`), extraction helpers
 - `src/services/SummarizationService.ts`
-  - provider-specific requests (Ollama/OpenRouter/OpenAI), streaming handlers
+  - provider-specific requests (Ollama/OpenRouter/OpenAI), streaming handlers, chunking + retries
 - `src/transcript-view.ts`
   - dedicated transcript side panel with search and copy helpers
 - `src/transcript-formatter.ts`
@@ -152,9 +153,16 @@ npm run check-format
 ### Summary generation pipeline
 1. Concatenate transcript lines into full text
 2. Build prompt (default instructions or custom prompt template)
-3. Send to selected provider (`ollama`, `openrouter`, `openai`)
-4. Stream summary chunks (when available)
-5. Build final note with frontmatter + summary + transcript
+3. For long input and enabled chunking: run map-reduce (chunk summaries -> final reduce summary)
+4. Send to selected provider (`ollama`, `openrouter`, `openai`)
+5. Stream final summary chunks (when available)
+6. Build final note with frontmatter + summary + transcript
+
+Chunking details:
+- `CHUNK_MAX_CHARS`: 10000
+- `chunkConcurrency`: configurable (default `1`)
+- map-phase chunk failures are handled defensively (skip failed chunks, fail only if all chunks fail)
+- Ollama non-streaming requests use `requestUrl` with retry on `503/504`
 
 ### Prompt template placeholders
 Supported placeholders include (case variants supported):
@@ -167,9 +175,9 @@ Supported placeholders include (case variants supported):
 - `{{created_at}}`
 
 ### Core abstractions
-- `YTranscriptSettings` — persisted plugin settings
+- `YTranscriptSettings` — persisted plugin settings (`enableChunking`, `chunkConcurrency` included)
 - `TranscriptResponse` / `TranscriptLine` — transcript domain model
-- `SummarizationService` — provider abstraction + streaming behavior
+- `SummarizationService` — provider abstraction + streaming + chunked map-reduce behavior
 - `InsertTranscriptCommand` — orchestrator for full user flow
 
 ---
@@ -217,6 +225,11 @@ Supported placeholders include (case variants supported):
 ### Streaming issues
 - Provider stream format mismatch can break chunk parsing
 - Service has non-stream fallback in some paths (Ollama)
+
+### Chunking / Ollama issues
+- Chunking with Ollama (especially remote/proxy) can increase latency/timeouts
+- Start with `chunkConcurrency = 1` and increase cautiously
+- 503/504 can still happen under high load; retries are implemented for Ollama non-streaming path
 
 ### Build/test issues
 - Run clean install: `npm install`
@@ -303,6 +316,11 @@ Supported placeholders include (case variants supported):
 - Streaming is optional:
   - Must gracefully fallback to non-streaming
 
+- For Ollama:
+  - prefer `requestUrl` for non-streaming requests (CORS-safe in Obsidian)
+  - keep chunk concurrency conservative by default (`1`)
+  - retry transient `503/504` responses with backoff
+
 - Never assume provider-specific response formats are stable.
 
 ---
@@ -326,12 +344,15 @@ Supported placeholders include (case variants supported):
 ## 13) Scalability Rules
 
 - The system must support large transcripts.
+- Current strategy uses chunked map-reduce summarization.
+- `chunkConcurrency` must stay configurable and conservative by default.
 - Future implementations should consider:
-  - chunking
+  - adaptive chunk sizing per provider/model
   - multi-step summarization
   - progressive processing
 
 - Avoid designs that assume the entire transcript fits into a single LLM request.
+- Avoid aggressive parallel chunking defaults for Ollama.
 
 ---
 
