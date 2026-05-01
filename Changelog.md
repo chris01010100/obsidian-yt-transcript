@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.13.9] – 2026-05-01
+
+### 🐛 Fixes
+- Reading-Mode-Schreibpfad für neu erstellte Notes weiter gehärtet.
+- Der Haupt-Command übergibt jetzt die neu erstellte Ziel-`TFile` explizit an den Insert-Workflow.
+- Finaler Output wird nur bei wirklich schreibbarem Source-Editor per `editor.replaceRange(...)` geschrieben.
+- Ohne schreibbaren Editor wird der finale Output immer direkt per `vault.modify(targetFile, output)` in die Ziel-Datei geschrieben.
+- Der finale Dateiinhalt wird vor dem Rename persistiert, damit Reading Mode keine leere umbenannte Datei hinterlässt.
+
+### 🔎 Debugging
+- Debug-Log für die finale Schreibstelle ergänzt:
+  - `writeTarget`: `editor` oder `vault.modify`
+  - `targetPath`
+  - `outputLength`
+
+### 🔒 Stability
+- Keine `currentMode`- oder `leaf.setViewState`-Logik.
+- Keine Änderungen an Chunking oder LLM-Verhalten.
+
 ## [1.13.8] – 2026-05-01
 
 ### 🐛 Fixes

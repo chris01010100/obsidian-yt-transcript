@@ -71,6 +71,12 @@ Reset erfolgt automatisch nach 120 Sekunden auf `YTranscript: Ready`.
 Wenn kein Editor offen ist, erstellt das Plugin automatisch eine neue Note
 (im optional konfigurierten `Output Folder`) und schreibt dort den Inhalt.
 
-Bei Reading Mode oder wenn kein Editor verfügbar ist, schreibt das Plugin den finalen Output sicher direkt in die Ziel-Datei (Hybrid-Fallback via `vault.modify`).
-Dafür wird ein stabiler `TFile`-Handle verwendet, auch wenn die Note später umbenannt wird.
+Bei Reading Mode oder wenn kein schreibbarer Source-Editor verfügbar ist, schreibt das Plugin den finalen Output immer direkt in die Ziel-Datei (Hybrid-Fallback via `vault.modify`).
+Dafür wird die neu erstellte Ziel-`TFile` explizit an den Insert-Workflow übergeben und vor dem Rename beschrieben.
+Live-Streaming/Placeholder-Updates werden in Reading Mode übersprungen; der finale Output wird trotzdem persistiert.
 Es werden keine internen Obsidian View-States oder Editor-Modi manipuliert.
+
+Bei aktiviertem Debug-Logging protokolliert die finale Schreibstelle sichere Metadaten:
+- `writeTarget`: `editor` oder `vault.modify`
+- `targetPath`
+- `outputLength`

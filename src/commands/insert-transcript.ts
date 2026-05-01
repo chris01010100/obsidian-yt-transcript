@@ -1,4 +1,4 @@
-import { Editor, Notice, TFile } from "obsidian";
+import { Editor, MarkdownView, Notice, TFile } from "obsidian";
 import { URLDetector } from "../url-detection";
 import {
 	TranscriptFormatter,
@@ -41,8 +41,8 @@ export class InsertTranscriptCommand {
 	/**
 	 * Executes the insert transcript command with default settings
 	 */
-	async execute(editor?: Editor): Promise<void> {
-		await this.executeWithOptions(editor, {});
+	async execute(editor?: Editor, targetFile?: TFile | null): Promise<void> {
+		await this.executeWithOptions(editor, {}, targetFile);
 	}
 
 	/**
@@ -51,9 +51,10 @@ export class InsertTranscriptCommand {
 	async executeWithOptions(
 		editor: Editor | undefined,
 		options: InsertTranscriptOptions,
+		explicitTargetFile?: TFile | null,
 	): Promise<void> {
 		let statusRequestId: number | undefined;
-		let targetFile = this.getActiveTargetFile();
+		let targetFile = explicitTargetFile || this.getActiveTargetFile();
 
 		try {
 			const debugEnabled = this.plugin.settings?.enableDebugLogging === true;
@@ -66,9 +67,10 @@ export class InsertTranscriptCommand {
 			}
 
 			const { url } = promptInput;
-			targetFile = this.getActiveTargetFile() || targetFile;
+			targetFile = explicitTargetFile || this.getActiveTargetFile() || targetFile;
+			const writableEditor = this.isEditorWritable(editor) ? editor : undefined;
 			new Notice("Generating YouTube summary…");
-			const insertionStart = editor ? editor.getCursor() : null;
+			const insertionStart = writableEditor ? writableEditor.getCursor() : null;
 			const loadingText = [
 				`## Summary`,
 				"Generating summary…",
@@ -78,8 +80,8 @@ export class InsertTranscriptCommand {
 				"",
 			].join("\n");
 
-			if (editor && insertionStart) {
-				editor.replaceRange(loadingText, insertionStart);
+			if (writableEditor && insertionStart) {
+				writableEditor.replaceRange(loadingText, insertionStart);
 			}
 
 			// Validate URL
@@ -136,8 +138,8 @@ export class InsertTranscriptCommand {
 			);
 
 			let currentOutputEnd =
-				editor && insertionStart
-					? editor.offsetToPos(editor.posToOffset(insertionStart) + loadingText.length)
+				writableEditor && insertionStart
+					? writableEditor.offsetToPos(writableEditor.posToOffset(insertionStart) + loadingText.length)
 					: null;
 			let lastStreamUpdate = 0;
 			let streamedSummaryText = "";
@@ -163,8 +165,8 @@ export class InsertTranscriptCommand {
 					"",
 				].join("\n");
 
-				if (editor && insertionStart && currentOutputEnd) {
-					editor.replaceRange(errorText, insertionStart, currentOutputEnd);
+				if (writableEditor && insertionStart && currentOutputEnd) {
+					writableEditor.replaceRange(errorText, insertionStart, currentOutputEnd);
 				} else if (targetFile) {
 					await this.writeOutputToFile(targetFile, errorText);
 				}
@@ -218,7 +220,7 @@ export class InsertTranscriptCommand {
 						this.plugin.setStatusForRequest?.(statusRequestId, "YT: Final merge...");
 					}
 
-					if (!editor || !insertionStart || !currentOutputEnd) {
+					if (!writableEditor || !insertionStart || !currentOutputEnd) {
 						return;
 					}
 
@@ -235,9 +237,9 @@ export class InsertTranscriptCommand {
 						formattedTranscript,
 						metadata,
 					);
-					editor.replaceRange(liveOutput, insertionStart, currentOutputEnd);
-					currentOutputEnd = editor.offsetToPos(
-						editor.posToOffset(insertionStart) + liveOutput.length,
+					writableEditor.replaceRange(liveOutput, insertionStart, currentOutputEnd);
+					currentOutputEnd = writableEditor.offsetToPos(
+						writableEditor.posToOffset(insertionStart) + liveOutput.length,
 					);
 				},
 			);
@@ -251,10 +253,20 @@ export class InsertTranscriptCommand {
 
 			if (!output.trim()) return;
 
-			if (editor && insertionStart && currentOutputEnd) {
-				editor.replaceRange(output, insertionStart, currentOutputEnd);
+			if (writableEditor && insertionStart && currentOutputEnd && this.isEditorWritable(writableEditor)) {
+				writableEditor.replaceRange(output, insertionStart, currentOutputEnd);
+				debugLog(debugEnabled, "Final output written", {
+					writeTarget: "editor",
+					targetPath: targetFile?.path || "",
+					outputLength: output.length,
+				});
 			} else if (targetFile) {
 				await this.writeOutputToFile(targetFile, output);
+				debugLog(debugEnabled, "Final output written", {
+					writeTarget: "vault.modify",
+					targetPath: targetFile.path,
+					outputLength: output.length,
+				});
 			} else {
 				throw new Error("No target file available for writing output.");
 			}
@@ -591,6 +603,19 @@ export class InsertTranscriptCommand {
 	private getActiveTargetFile(): TFile | null {
 		const activeFile = this.plugin.app.workspace.getActiveFile();
 		return activeFile instanceof TFile ? activeFile : null;
+	}
+
+	private isEditorWritable(editor?: Editor): editor is Editor {
+		if (!editor) {
+			return false;
+		}
+
+		const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view || view.getMode?.() !== "source") {
+			return false;
+		}
+
+		return view.editor === editor;
 	}
 
 	private async writeOutputToFile(file: TFile, output: string): Promise<void> {

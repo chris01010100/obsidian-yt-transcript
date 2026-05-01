@@ -1643,16 +1643,16 @@ var InsertTranscriptCommand = class {
   /**
    * Executes the insert transcript command with default settings
    */
-  async execute(editor) {
-    await this.executeWithOptions(editor, {});
+  async execute(editor, targetFile) {
+    await this.executeWithOptions(editor, {}, targetFile);
   }
   /**
    * Executes the insert transcript command with custom options
    */
-  async executeWithOptions(editor, options) {
+  async executeWithOptions(editor, options, explicitTargetFile) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E;
     let statusRequestId;
-    let targetFile = this.getActiveTargetFile();
+    let targetFile = explicitTargetFile || this.getActiveTargetFile();
     try {
       const debugEnabled = ((_a = this.plugin.settings) == null ? void 0 : _a.enableDebugLogging) === true;
       debugLog(debugEnabled, "Insert transcript flow start");
@@ -1661,9 +1661,10 @@ var InsertTranscriptCommand = class {
         return;
       }
       const { url } = promptInput;
-      targetFile = this.getActiveTargetFile() || targetFile;
+      targetFile = explicitTargetFile || this.getActiveTargetFile() || targetFile;
+      const writableEditor = this.isEditorWritable(editor) ? editor : void 0;
       new import_obsidian5.Notice("Generating YouTube summary\u2026");
-      const insertionStart = editor ? editor.getCursor() : null;
+      const insertionStart = writableEditor ? writableEditor.getCursor() : null;
       const loadingText = [
         `## Summary`,
         "Generating summary\u2026",
@@ -1672,8 +1673,8 @@ var InsertTranscriptCommand = class {
         "Loading transcript\u2026",
         ""
       ].join("\n");
-      if (editor && insertionStart) {
-        editor.replaceRange(loadingText, insertionStart);
+      if (writableEditor && insertionStart) {
+        writableEditor.replaceRange(loadingText, insertionStart);
       }
       if (!URLDetector.isValidYouTubeUrl(url)) {
         return;
@@ -1708,7 +1709,7 @@ var InsertTranscriptCommand = class {
         url,
         formatOptions
       );
-      let currentOutputEnd = editor && insertionStart ? editor.offsetToPos(editor.posToOffset(insertionStart) + loadingText.length) : null;
+      let currentOutputEnd = writableEditor && insertionStart ? writableEditor.offsetToPos(writableEditor.posToOffset(insertionStart) + loadingText.length) : null;
       let lastStreamUpdate = 0;
       let streamedSummaryText = "";
       const chunkingEnabled = (_k = (_j = this.plugin.settings) == null ? void 0 : _j.enableChunking) != null ? _k : true;
@@ -1727,8 +1728,8 @@ var InsertTranscriptCommand = class {
           formattedTranscript,
           ""
         ].join("\n");
-        if (editor && insertionStart && currentOutputEnd) {
-          editor.replaceRange(errorText, insertionStart, currentOutputEnd);
+        if (writableEditor && insertionStart && currentOutputEnd) {
+          writableEditor.replaceRange(errorText, insertionStart, currentOutputEnd);
         } else if (targetFile) {
           await this.writeOutputToFile(targetFile, errorText);
         }
@@ -1780,7 +1781,7 @@ var InsertTranscriptCommand = class {
             finalMergeStarted = true;
             (_b2 = (_a2 = this.plugin).setStatusForRequest) == null ? void 0 : _b2.call(_a2, statusRequestId, "YT: Final merge...");
           }
-          if (!editor || !insertionStart || !currentOutputEnd) {
+          if (!writableEditor || !insertionStart || !currentOutputEnd) {
             return;
           }
           streamedSummaryText = fullSummary;
@@ -1794,9 +1795,9 @@ var InsertTranscriptCommand = class {
             formattedTranscript,
             metadata
           );
-          editor.replaceRange(liveOutput, insertionStart, currentOutputEnd);
-          currentOutputEnd = editor.offsetToPos(
-            editor.posToOffset(insertionStart) + liveOutput.length
+          writableEditor.replaceRange(liveOutput, insertionStart, currentOutputEnd);
+          currentOutputEnd = writableEditor.offsetToPos(
+            writableEditor.posToOffset(insertionStart) + liveOutput.length
           );
         }
       );
@@ -1806,10 +1807,20 @@ var InsertTranscriptCommand = class {
         metadata
       );
       if (!output.trim()) return;
-      if (editor && insertionStart && currentOutputEnd) {
-        editor.replaceRange(output, insertionStart, currentOutputEnd);
+      if (writableEditor && insertionStart && currentOutputEnd && this.isEditorWritable(writableEditor)) {
+        writableEditor.replaceRange(output, insertionStart, currentOutputEnd);
+        debugLog(debugEnabled, "Final output written", {
+          writeTarget: "editor",
+          targetPath: (targetFile == null ? void 0 : targetFile.path) || "",
+          outputLength: output.length
+        });
       } else if (targetFile) {
         await this.writeOutputToFile(targetFile, output);
+        debugLog(debugEnabled, "Final output written", {
+          writeTarget: "vault.modify",
+          targetPath: targetFile.path,
+          outputLength: output.length
+        });
       } else {
         throw new Error("No target file available for writing output.");
       }
@@ -2058,6 +2069,17 @@ var InsertTranscriptCommand = class {
     const activeFile = this.plugin.app.workspace.getActiveFile();
     return activeFile instanceof import_obsidian5.TFile ? activeFile : null;
   }
+  isEditorWritable(editor) {
+    var _a;
+    if (!editor) {
+      return false;
+    }
+    const view = this.plugin.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView);
+    if (!view || ((_a = view.getMode) == null ? void 0 : _a.call(view)) !== "source") {
+      return false;
+    }
+    return view.editor === editor;
+  }
   async writeOutputToFile(file, output) {
     await this.plugin.app.vault.modify(file, output);
   }
@@ -2167,14 +2189,15 @@ var YTranscriptPlugin = class extends import_obsidian6.Plugin {
         if (!target.editor) {
           new import_obsidian6.Notice("No editor available. Writing note without live editor updates.");
         }
-        await this.insertTranscriptCommand.execute((_a = target.editor) != null ? _a : void 0);
+        await this.insertTranscriptCommand.execute((_a = target.editor) != null ? _a : void 0, target.file);
       }
     });
     this.addSettingTab(new YTranslateSettingTab(this.app, this));
   }
   async ensureActiveMarkdownEditor() {
-    var _a;
+    var _a, _b, _c, _d, _e;
     let view = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
+    let targetFile = (_a = view == null ? void 0 : view.file) != null ? _a : null;
     if (!view) {
       const outputFolder = this.settings.outputFolder.trim();
       const folderPrefix = outputFolder ? `${outputFolder.replace(/\/$/, "")}/` : "";
@@ -2182,22 +2205,28 @@ var YTranscriptPlugin = class extends import_obsidian6.Plugin {
         `${folderPrefix}YouTube Transcript ${Date.now()}.md`,
         ""
       );
+      targetFile = file;
       const leaf = this.app.workspace.getLeaf(true);
       await leaf.openFile(file);
       view = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
     }
     if (!view) {
-      return { view: null, editor: null };
+      return { view: null, editor: null, file: targetFile };
     }
+    targetFile = (_b = view.file) != null ? _b : targetFile;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const currentView = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
       if (currentView == null ? void 0 : currentView.editor) {
-        return { view: currentView, editor: currentView.editor };
+        return { view: currentView, editor: currentView.editor, file: (_c = currentView.file) != null ? _c : targetFile };
       }
       await this.sleep(100 * (attempt + 1));
     }
     const fallbackView = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
-    return { view: fallbackView || view, editor: (_a = fallbackView == null ? void 0 : fallbackView.editor) != null ? _a : null };
+    return {
+      view: fallbackView || view,
+      editor: (_d = fallbackView == null ? void 0 : fallbackView.editor) != null ? _d : null,
+      file: (_e = fallbackView == null ? void 0 : fallbackView.file) != null ? _e : targetFile
+    };
   }
   async sleep(ms) {
     await new Promise((resolve) => setTimeout(resolve, ms));

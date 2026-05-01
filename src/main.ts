@@ -4,6 +4,7 @@ import {
 	MarkdownView,
 	Notice,
 	Plugin,
+	TFile,
 	PluginSettingTab,
 	requestUrl,
 	Setting,
@@ -97,7 +98,7 @@ export default class YTranscriptPlugin extends Plugin {
 					new Notice("No editor available. Writing note without live editor updates.");
 				}
 
-				await this.insertTranscriptCommand.execute(target.editor ?? undefined);
+				await this.insertTranscriptCommand.execute(target.editor ?? undefined, target.file);
 			},
 		});
 
@@ -107,8 +108,10 @@ export default class YTranscriptPlugin extends Plugin {
 	private async ensureActiveMarkdownEditor(): Promise<{
 		view: MarkdownView | null;
 		editor: Editor | null;
+		file: TFile | null;
 	}> {
 		let view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		let targetFile = view?.file ?? null;
 
 		if (!view) {
 			const outputFolder = this.settings.outputFolder.trim();
@@ -117,6 +120,7 @@ export default class YTranscriptPlugin extends Plugin {
 				`${folderPrefix}YouTube Transcript ${Date.now()}.md`,
 				"",
 			);
+			targetFile = file;
 
 			const leaf = this.app.workspace.getLeaf(true);
 			await leaf.openFile(file);
@@ -124,20 +128,26 @@ export default class YTranscriptPlugin extends Plugin {
 		}
 
 		if (!view) {
-			return { view: null, editor: null };
+			return { view: null, editor: null, file: targetFile };
 		}
+
+		targetFile = view.file ?? targetFile;
 
 		for (let attempt = 0; attempt < 3; attempt += 1) {
 			const currentView = this.app.workspace.getActiveViewOfType(MarkdownView);
 			if (currentView?.editor) {
-				return { view: currentView, editor: currentView.editor };
+				return { view: currentView, editor: currentView.editor, file: currentView.file ?? targetFile };
 			}
 
 			await this.sleep(100 * (attempt + 1));
 		}
 
 		const fallbackView = this.app.workspace.getActiveViewOfType(MarkdownView);
-		return { view: fallbackView || view, editor: fallbackView?.editor ?? null };
+		return {
+			view: fallbackView || view,
+			editor: fallbackView?.editor ?? null,
+			file: fallbackView?.file ?? targetFile,
+		};
 	}
 
 	private async sleep(ms: number): Promise<void> {
