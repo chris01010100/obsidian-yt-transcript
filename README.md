@@ -12,6 +12,7 @@ Flow:
 2. Transcript wird geladen.
 3. LLM-Summary wird erzeugt (Ollama / OpenRouter / OpenAI).
 4. Note wird mit Frontmatter + Summary + Transcript geschrieben.
+5. Statusleiste zeigt Pipeline-Status (Loading, Chunking, Merge, Done).
 
 ## Output
 
@@ -51,6 +52,16 @@ Wichtiger Hinweis (Ollama):
 - Chunking ist insbesondere mit Ollama (lokal oder remote über Proxy) mit Vorsicht zu verwenden.
 - Höhere `Chunk map concurrency` kann Laufzeit, Last und Timeout-Risiko (z. B. 503/504) deutlich erhöhen.
 - Empfohlener Startwert: `Chunk map concurrency = 1`.
+
+## Statusleiste
+
+Während der Ausführung zeigt die Obsidian-Statusleiste den Fortschritt:
+- `YT: Fetching transcript...`
+- `YT: Chunking X/Y...` (bei aktivem Chunking)
+- `YT: Final merge...`
+- `YT: Done` oder `YT: Failed`
+
+Reset erfolgt automatisch nach 120 Sekunden auf `YTranscript: Ready`.
 
 ## Verhalten ohne offene Note
 

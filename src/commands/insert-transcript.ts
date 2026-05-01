@@ -10,6 +10,7 @@ import { PromptModal, type PromptModalResult } from "../prompt-modal";
 import { EditorExtensions } from "../../editor-extensions";
 import { TranscriptConfig } from "../types";
 import { SummarizationService, debugLog } from "../services/SummarizationService";
+import { splitIntoChunks } from "../transcript-chunker";
 
 export interface InsertTranscriptOptions {
 	template?: FormatTemplate;
@@ -28,6 +29,9 @@ interface VideoMetadata {
 	modelName: string;
 	createdAt: string;
 }
+
+const MAX_SINGLE_PASS_CHARS = 12000;
+const CHUNK_MAX_CHARS = 10000;
 
 export class InsertTranscriptCommand {
 	constructor(private plugin: any) { }
@@ -48,6 +52,8 @@ export class InsertTranscriptCommand {
 		editor: Editor,
 		options: InsertTranscriptOptions,
 	): Promise<void> {
+		let statusRequestId: number | undefined;
+
 		try {
 			const debugEnabled = this.plugin.settings?.enableDebugLogging === true;
 			debugLog(debugEnabled, "Insert transcript flow start");
@@ -77,6 +83,8 @@ export class InsertTranscriptCommand {
 				return; // Invalid YouTube URL
 			}
 
+			statusRequestId = this.plugin.startStatusRequest?.("YT: Fetching transcript...");
+
 			// Fetch transcript
 			const transcriptConfig = this.createTranscriptConfig();
 			const transcript = await YoutubeTranscript.getTranscript(
@@ -90,8 +98,11 @@ export class InsertTranscriptCommand {
 				!transcript.lines ||
 				transcript.lines.length === 0
 			) {
+				this.plugin.completeStatusRequest?.(statusRequestId, "YT: No transcript found");
 				return; // No transcript available
 			}
+
+			this.plugin.setStatusForRequest?.(statusRequestId, "YT: Transcript loaded");
 
 			debugLog(debugEnabled, "Transcript loaded", {
 				lineCount: transcript.lines.length,
@@ -125,12 +136,18 @@ export class InsertTranscriptCommand {
 			);
 			let lastStreamUpdate = 0;
 			let streamedSummaryText = "";
+			const chunkingEnabled = this.plugin.settings?.enableChunking ?? true;
+			const chunkingActive = chunkingEnabled && fullText.trim().length > MAX_SINGLE_PASS_CHARS;
+			const chunkCount = chunkingActive
+				? splitIntoChunks(fullText, CHUNK_MAX_CHARS).length
+				: 1;
 
 			// Guard: ensure a model is selected
 			const selectedModel = this.plugin.settings?.model;
 			if (!selectedModel) {
 				new Notice("Please select a model in Settings before generating a summary.");
 				this.openPluginSettings();
+				this.plugin.completeStatusRequest?.(statusRequestId, "YT: Missing model");
 
 				const errorText = [
 					"## Summary",
@@ -144,6 +161,17 @@ export class InsertTranscriptCommand {
 				editor.replaceRange(errorText, insertionStart, currentOutputEnd);
 				return;
 			}
+
+			if (chunkingActive) {
+				this.plugin.setStatusForRequest?.(
+					statusRequestId,
+					`YT: Chunking 1/${chunkCount}...`,
+				);
+			} else {
+				this.plugin.setStatusForRequest?.(statusRequestId, "YT: Generating summary...");
+			}
+
+			let finalMergeStarted = false;
 
 			// Generate summary via LLM stream.
 			const summaryText = await this.summarizationService.summarizeStream(
@@ -166,6 +194,11 @@ export class InsertTranscriptCommand {
 					enableDebugLogging: debugEnabled,
 				},
 				async (_chunk, fullSummary) => {
+					if (!finalMergeStarted) {
+						finalMergeStarted = true;
+						this.plugin.setStatusForRequest?.(statusRequestId, "YT: Final merge...");
+					}
+
 					streamedSummaryText = fullSummary;
 					const now = Date.now();
 
@@ -197,6 +230,13 @@ export class InsertTranscriptCommand {
 
 			editor.replaceRange(output, insertionStart, currentOutputEnd);
 			await this.renameActiveNote(metadata.videoTitle);
+			if (chunkingActive) {
+				this.plugin.setStatusForRequest?.(
+					statusRequestId,
+					`YT: Chunking ${chunkCount}/${chunkCount}...`,
+				);
+			}
+			this.plugin.completeStatusRequest?.(statusRequestId, "YT: Done");
 			debugLog(debugEnabled, "Final summary ready", {
 				summaryLength: summaryText.length,
 			});
@@ -204,6 +244,9 @@ export class InsertTranscriptCommand {
 		} catch (error) {
 			// Silently fail - errors are expected (network issues, no transcript, etc.)
 			new Notice("Failed to generate YouTube summary. Check developer console.");
+			if (statusRequestId !== undefined) {
+				this.plugin.completeStatusRequest?.(statusRequestId, "YT: Failed");
+			}
 			console.error("Insert transcript failed:", error);
 		}
 	}

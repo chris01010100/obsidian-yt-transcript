@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.13.4] – 2026-05-01
+
+### ✨ Verbesserungen
+- Statusleisten-Feedback für die Transcript-/Summary-Pipeline hinzugefügt.
+- Status-Phasen sichtbar in Obsidian:
+  - Transcript laden
+  - Chunking (X/Y)
+  - Final Merge
+  - Done / Failed
+- Request-ID-basierte Status-Steuerung ergänzt, um Race Conditions bei parallelen Läufen zu vermeiden.
+- Auto-Reset der Statusleiste auf `YTranscript: Ready` nach 120 Sekunden.
+
 ## [1.13.3] – 2026-05-01
 
 ### ✨ Verbesserungen

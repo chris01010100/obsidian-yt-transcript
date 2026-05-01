@@ -54,9 +54,15 @@ const DEFAULT_SETTINGS: YTranscriptSettings = {
 export default class YTranscriptPlugin extends Plugin {
 	settings: YTranscriptSettings;
 	private insertTranscriptCommand: InsertTranscriptCommand;
+	private statusBarItemEl: HTMLElement | null = null;
+	private statusResetTimer: ReturnType<typeof setTimeout> | null = null;
+	private activeStatusRequestId = 0;
 
 	async onload() {
 		await this.loadSettings();
+
+		this.statusBarItemEl = this.addStatusBarItem();
+		this.statusBarItemEl.setText("YTranscript: Ready");
 
 		// Initialize commands
 		this.insertTranscriptCommand = new InsertTranscriptCommand(this);
@@ -121,7 +127,45 @@ export default class YTranscriptPlugin extends Plugin {
 	}
 
 	onunload() {
+		if (this.statusResetTimer) {
+			clearTimeout(this.statusResetTimer);
+			this.statusResetTimer = null;
+		}
 		this.app.workspace.detachLeavesOfType(TRANSCRIPT_TYPE_VIEW);
+	}
+
+	startStatusRequest(initialText: string): number {
+		this.activeStatusRequestId += 1;
+		const requestId = this.activeStatusRequestId;
+		this.setStatusForRequest(requestId, initialText);
+		return requestId;
+	}
+
+	setStatusForRequest(requestId: number, text: string): void {
+		if (requestId !== this.activeStatusRequestId) {
+			return;
+		}
+
+		this.statusBarItemEl?.setText(text);
+		this.scheduleStatusReset(requestId);
+	}
+
+	completeStatusRequest(requestId: number, text: string): void {
+		this.setStatusForRequest(requestId, text);
+	}
+
+	private scheduleStatusReset(requestId: number): void {
+		if (this.statusResetTimer) {
+			clearTimeout(this.statusResetTimer);
+		}
+
+		this.statusResetTimer = setTimeout(() => {
+			if (requestId !== this.activeStatusRequestId) {
+				return;
+			}
+
+			this.statusBarItemEl?.setText("YTranscript: Ready");
+		}, 120000);
 	}
 
 	async loadSettings() {
