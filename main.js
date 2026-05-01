@@ -2178,7 +2178,6 @@ var YTranscriptPlugin = class extends import_obsidian6.Plugin {
     if (!view) {
       return { view: null, editor: null };
     }
-    await this.ensureViewSourceMode(view);
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const currentView = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
       if (currentView == null ? void 0 : currentView.editor) {
@@ -2188,36 +2187,6 @@ var YTranscriptPlugin = class extends import_obsidian6.Plugin {
     }
     const fallbackView = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
     return { view: fallbackView || view, editor: (_a = fallbackView == null ? void 0 : fallbackView.editor) != null ? _a : null };
-  }
-  async ensureViewSourceMode(view) {
-    const anyView = view;
-    try {
-      if (typeof anyView.setMode === "function") {
-        await anyView.setMode("source");
-        return;
-      }
-      if (typeof anyView.setSourceMode === "function") {
-        await anyView.setSourceMode();
-        return;
-      }
-      const leaf = anyView.leaf;
-      if (!leaf || typeof leaf.getViewState !== "function" || typeof leaf.setViewState !== "function") {
-        return;
-      }
-      const state = leaf.getViewState();
-      await leaf.setViewState(
-        {
-          ...state,
-          state: {
-            ...state.state || {},
-            mode: "source"
-          }
-        },
-        { focus: true }
-      );
-    } catch (error) {
-      console.warn("Failed to switch markdown view to source mode:", error);
-    }
   }
   async sleep(ms) {
     await new Promise((resolve) => setTimeout(resolve, ms));

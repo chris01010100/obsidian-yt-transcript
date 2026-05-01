@@ -71,5 +71,5 @@ Reset erfolgt automatisch nach 120 Sekunden auf `YTranscript: Ready`.
 Wenn kein Editor offen ist, erstellt das Plugin automatisch eine neue Note
 (im optional konfigurierten `Output Folder`) und schreibt dort den Inhalt.
 
-Bei Reading Mode versucht das Plugin vor dem Einfügen auf Source/Edit Mode zu wechseln.
-Falls kein Editor verfügbar ist, wird der finale Output sicher direkt in die Datei geschrieben (Hybrid-Fallback).
+Bei Reading Mode oder wenn kein Editor verfügbar ist, schreibt das Plugin den finalen Output sicher direkt in die Datei (Hybrid-Fallback via `vault.modify`).
+Es werden keine internen Obsidian View-States oder Editor-Modi manipuliert.

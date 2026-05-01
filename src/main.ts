@@ -127,8 +127,6 @@ export default class YTranscriptPlugin extends Plugin {
 			return { view: null, editor: null };
 		}
 
-		await this.ensureViewSourceMode(view);
-
 		for (let attempt = 0; attempt < 3; attempt += 1) {
 			const currentView = this.app.workspace.getActiveViewOfType(MarkdownView);
 			if (currentView?.editor) {
@@ -140,40 +138,6 @@ export default class YTranscriptPlugin extends Plugin {
 
 		const fallbackView = this.app.workspace.getActiveViewOfType(MarkdownView);
 		return { view: fallbackView || view, editor: fallbackView?.editor ?? null };
-	}
-
-	private async ensureViewSourceMode(view: MarkdownView): Promise<void> {
-		const anyView = view as any;
-		try {
-			if (typeof anyView.setMode === "function") {
-				await anyView.setMode("source");
-				return;
-			}
-
-			if (typeof anyView.setSourceMode === "function") {
-				await anyView.setSourceMode();
-				return;
-			}
-
-			const leaf = anyView.leaf;
-			if (!leaf || typeof leaf.getViewState !== "function" || typeof leaf.setViewState !== "function") {
-				return;
-			}
-
-			const state = leaf.getViewState();
-			await leaf.setViewState(
-				{
-					...state,
-					state: {
-						...(state.state || {}),
-						mode: "source",
-					},
-				},
-				{ focus: true },
-			);
-		} catch (error) {
-			console.warn("Failed to switch markdown view to source mode:", error);
-		}
 	}
 
 	private async sleep(ms: number): Promise<void> {

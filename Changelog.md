@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.13.7] – 2026-05-01
+
+### 🐛 Fixes
+- Critical crash fix for Obsidian MarkdownView internals.
+- Removed unsafe editor mode/state switching logic that touched leaf/view internals.
+- Removed `leaf.setViewState(...mode: "source"...)` based mode forcing.
+- Writing strategy is now safe and non-invasive:
+  - with editor: write via `editor.replaceRange(...)`
+  - without editor (reading mode / no editor): write via `vault.modify(...)`
+
+### 🔒 Stability
+- No direct manipulation of `currentMode`, `setState` or internal MarkdownView state.
+- Existing pipeline unchanged (chunking, streaming, statusbar, debug logging).
+
 ## [1.13.6] – 2026-05-01
 
 ### ✨ Verbesserungen
