@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.13.3] – 2026-05-01
+
+### ✨ Verbesserungen
+- Optionales Developer-Debug-Logging für Transcript- und Summary-Pipeline hinzugefügt (`Enable debug logging`, default: aus).
+- Konsistente Debug-Events für:
+  - Pipeline-Start
+  - Transcript geladen (Line Count)
+  - Chunking aktiv + Chunk-Anzahl/-Größe
+  - Chunk X/Y Start/OK/Fehler
+  - Final Merge Start/OK
+  - Provider + Modell + Streaming-Status
+
+### 🔒 Sicherheit
+- Debug-Logs enthalten nur sichere Metadaten.
+- Keine API-Keys und keine vollständigen Transcript-Inhalte in Logs.
+
 ## [1.13.2] – 2026-04-30
 
 ### ✨ Verbesserungen

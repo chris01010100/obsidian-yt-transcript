@@ -28,6 +28,7 @@ interface YTranscriptSettings {
 	outputFolder: string;
 	enableChunking: boolean;
 	chunkConcurrency: number;
+	enableDebugLogging: boolean;
 	leafUrls: string[];
 }
 
@@ -46,6 +47,7 @@ const DEFAULT_SETTINGS: YTranscriptSettings = {
 	outputFolder: "",
 	enableChunking: true,
 	chunkConcurrency: 1,
+	enableDebugLogging: false,
 	leafUrls: [],
 };
 
@@ -348,6 +350,18 @@ class YTranslateSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						const parsed = Number.parseInt(value, 10);
 						this.plugin.settings.chunkConcurrency = Number.isNaN(parsed) ? 1 : Math.max(1, parsed);
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Enable debug logging")
+			.setDesc("Logs safe pipeline metadata in developer console.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableDebugLogging ?? false)
+					.onChange(async (value) => {
+						this.plugin.settings.enableDebugLogging = value;
 						await this.plugin.saveSettings();
 					}),
 			);

@@ -17,9 +17,27 @@ export interface SummarizationOptions {
     createdAt?: string;
     enableChunking?: boolean;
     chunkConcurrency?: number;
+    enableDebugLogging?: boolean;
 }
 
 export type SummaryChunkHandler = (chunk: string, fullText: string) => void | Promise<void>;
+
+export function debugLog(
+    enabled: boolean | undefined,
+    event: string,
+    metadata?: Record<string, unknown>,
+): void {
+    if (!enabled) {
+        return;
+    }
+
+    if (metadata) {
+        console.log(`[YTranscript][Debug] ${event}`, metadata);
+        return;
+    }
+
+    console.log(`[YTranscript][Debug] ${event}`);
+}
 
 interface OllamaGenerateResponse {
     response?: string;
@@ -80,8 +98,16 @@ export class SummarizationService {
     async summarize(text: string, options?: SummarizationOptions): Promise<string> {
         const language = "";
         const provider = options?.provider || "ollama";
+        const useChunking = this.shouldUseChunking(text, options);
 
-        if (this.shouldUseChunking(text, options)) {
+        debugLog(options?.enableDebugLogging, "LLM summarize start", {
+            provider,
+            model: options?.model || "default",
+            stream: false,
+            chunking: useChunking,
+        });
+
+        if (useChunking) {
             return this.summarizeLargeTextMapReduce(text, options, false);
         }
 
@@ -132,8 +158,16 @@ export class SummarizationService {
     ): Promise<string> {
         const language = "";
         const provider = options?.provider || "ollama";
+        const useChunking = this.shouldUseChunking(text, options);
 
-        if (this.shouldUseChunking(text, options)) {
+        debugLog(options?.enableDebugLogging, "LLM summarize start", {
+            provider,
+            model: options?.model || "default",
+            stream: true,
+            chunking: useChunking,
+        });
+
+        if (useChunking) {
             return this.summarizeLargeTextMapReduce(text, options, true, onChunk);
         }
 
@@ -215,6 +249,13 @@ export class SummarizationService {
         onChunk?: SummaryChunkHandler,
     ): Promise<string> {
         const chunks = splitIntoChunks(text, SummarizationService.CHUNK_MAX_CHARS);
+        const debugEnabled = options?.enableDebugLogging;
+
+        debugLog(debugEnabled, "Chunking active", {
+            chunkCount: chunks.length,
+            chunkMaxChars: SummarizationService.CHUNK_MAX_CHARS,
+        });
+
         if (chunks.length <= 1) {
             const noChunkOptions = { ...options, enableChunking: false };
             if (streamFinal && onChunk) {
@@ -232,13 +273,28 @@ export class SummarizationService {
             const batch = chunks.slice(i, i + chunkConcurrency);
             const batchSummaries = await Promise.all(
                 batch.map(async (chunk, batchIndex) => {
+                    const chunkIndex = i + batchIndex + 1;
+                    debugLog(debugEnabled, "Chunk summarize start", {
+                        chunk: `${chunkIndex}/${chunks.length}`,
+                        chunkSize: chunk.length,
+                    });
+
                     try {
-                        return await this.summarize(chunk, {
+                        const chunkSummary = await this.summarize(chunk, {
                             ...options,
                             promptTemplate: SummarizationService.CHUNK_PROMPT,
                             enableChunking: false,
                         });
+                        debugLog(debugEnabled, "Chunk summarize ok", {
+                            chunk: `${chunkIndex}/${chunks.length}`,
+                        });
+                        return chunkSummary;
                     } catch (error) {
+                        const errorMessage = error instanceof Error ? error.message : String(error);
+                        debugLog(debugEnabled, "Chunk summarize failed", {
+                            chunk: `${chunkIndex}/${chunks.length}`,
+                            error: errorMessage,
+                        });
                         console.warn(`Chunk summarization failed at index ${i + batchIndex}:`, error);
                         return "";
                     }
@@ -254,11 +310,24 @@ export class SummarizationService {
         const reduceInput = this.buildChunkedReduceInput(chunkSummaries);
         const finalOptions = { ...options, enableChunking: false };
 
+        debugLog(debugEnabled, "Final merge start", {
+            successfulChunks: chunkSummaries.length,
+            stream: streamFinal,
+        });
+
         if (streamFinal && onChunk) {
-            return this.summarizeStream(reduceInput, finalOptions, onChunk);
+            const finalSummary = await this.summarizeStream(reduceInput, finalOptions, onChunk);
+            debugLog(debugEnabled, "Final merge ok", {
+                summaryLength: finalSummary.length,
+            });
+            return finalSummary;
         }
 
-        return this.summarize(reduceInput, finalOptions);
+        const finalSummary = await this.summarize(reduceInput, finalOptions);
+        debugLog(debugEnabled, "Final merge ok", {
+            summaryLength: finalSummary.length,
+        });
+        return finalSummary;
     }
 
     private async summarizeWithOllama(

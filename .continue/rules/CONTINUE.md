@@ -108,6 +108,14 @@ npm run check-format
 - `manifest.json` — Obsidian plugin metadata
 - `.eslintrc`, `.prettierrc`, `.editorconfig` — code style tooling
 
+### Test files (examples)
+- `tests/api-parser.test.ts` — parser behavior
+- `tests/caption-parser.test.ts` — caption parsing
+- `tests/params-generation.test.ts` — API parameter generation
+- `tests/timestampt-utils.test.ts` — timestamp formatting
+- `tests/url-utils.test.ts` — URL parsing
+- `tests/transcript-chunker.test.ts` — chunk splitting behavior
+
 ---
 
 ## 4) Development Workflow

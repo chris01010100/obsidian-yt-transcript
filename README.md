@@ -33,6 +33,7 @@ Jede generierte Note enthält:
 - `Output Folder` (optional)
 - `Enable Chunking for long transcripts` (neu, Standard: aktiviert)
 - `Chunk map concurrency` (Standard: `1`, vorsichtig erhöhen)
+- `Enable debug logging` (Standard: aus, sichere Pipeline-Metadaten in der Developer Console)
 
 ## Chunking für lange Transcripts
 

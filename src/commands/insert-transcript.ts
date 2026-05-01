@@ -9,7 +9,7 @@ import { YoutubeTranscript } from "../youtube-transcript";
 import { PromptModal, type PromptModalResult } from "../prompt-modal";
 import { EditorExtensions } from "../../editor-extensions";
 import { TranscriptConfig } from "../types";
-import { SummarizationService } from "../services/SummarizationService";
+import { SummarizationService, debugLog } from "../services/SummarizationService";
 
 export interface InsertTranscriptOptions {
 	template?: FormatTemplate;
@@ -49,6 +49,9 @@ export class InsertTranscriptCommand {
 		options: InsertTranscriptOptions,
 	): Promise<void> {
 		try {
+			const debugEnabled = this.plugin.settings?.enableDebugLogging === true;
+			debugLog(debugEnabled, "Insert transcript flow start");
+
 			// Get YouTube URL with user confirmation
 			const promptInput = await this.getYouTubeUrlWithConfirmation(editor);
 			if (!promptInput?.url) {
@@ -89,6 +92,10 @@ export class InsertTranscriptCommand {
 			) {
 				return; // No transcript available
 			}
+
+			debugLog(debugEnabled, "Transcript loaded", {
+				lineCount: transcript.lines.length,
+			});
 
 			// Build full text for LLM
 			const fullText = transcript.lines.map((l) => l.text).join(" ");
@@ -156,6 +163,7 @@ export class InsertTranscriptCommand {
 					createdAt: metadata.createdAt,
 					enableChunking: this.plugin.settings?.enableChunking,
 					chunkConcurrency: this.plugin.settings?.chunkConcurrency,
+					enableDebugLogging: debugEnabled,
 				},
 				async (_chunk, fullSummary) => {
 					streamedSummaryText = fullSummary;
@@ -189,6 +197,9 @@ export class InsertTranscriptCommand {
 
 			editor.replaceRange(output, insertionStart, currentOutputEnd);
 			await this.renameActiveNote(metadata.videoTitle);
+			debugLog(debugEnabled, "Final summary ready", {
+				summaryLength: summaryText.length,
+			});
 			new Notice("YouTube summary inserted.");
 		} catch (error) {
 			// Silently fail - errors are expected (network issues, no transcript, etc.)

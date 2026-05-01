@@ -1,7 +1,7 @@
 {
 	"id": "ytranscript",
 	"name": "YTranscript",
-	"version": "1.13.2",
+	"version": "1.13.3",
 	"minAppVersion": "0.15.0",
 	"description": "Fetch YouTube transcripts and generate AI summaries directly into your notes with customizable prompts.",
 	"author": "Łukasz Strzępek",
