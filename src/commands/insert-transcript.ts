@@ -155,6 +155,7 @@ export class InsertTranscriptCommand {
 					modelName: metadata.modelName,
 					createdAt: metadata.createdAt,
 					enableChunking: this.plugin.settings?.enableChunking,
+					chunkConcurrency: this.plugin.settings?.chunkConcurrency,
 				},
 				async (_chunk, fullSummary) => {
 					streamedSummaryText = fullSummary;

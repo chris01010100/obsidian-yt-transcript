@@ -27,6 +27,7 @@ interface YTranscriptSettings {
 	promptFilePath: string;
 	outputFolder: string;
 	enableChunking: boolean;
+	chunkConcurrency: number;
 	leafUrls: string[];
 }
 
@@ -44,6 +45,7 @@ const DEFAULT_SETTINGS: YTranscriptSettings = {
 	promptFilePath: "",
 	outputFolder: "",
 	enableChunking: true,
+	chunkConcurrency: 1,
 	leafUrls: [],
 };
 
@@ -333,6 +335,19 @@ class YTranslateSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.enableChunking)
 					.onChange(async (value) => {
 						this.plugin.settings.enableChunking = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Chunk map concurrency")
+			.setDesc("Parallel chunk requests (1 = safest for local Ollama).")
+			.addText((text) =>
+				text
+					.setValue(String(this.plugin.settings.chunkConcurrency ?? 1))
+					.onChange(async (value) => {
+						const parsed = Number.parseInt(value, 10);
+						this.plugin.settings.chunkConcurrency = Number.isNaN(parsed) ? 1 : Math.max(1, parsed);
 						await this.plugin.saveSettings();
 					}),
 			);

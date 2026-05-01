@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.13.2] – 2026-04-30
+
+### ✨ Verbesserungen
+- Chunking für lange Transcripts robuster gemacht:
+  - `CHUNK_MAX_CHARS` auf `10000` erhöht (weniger Map-Requests)
+  - konfigurierbare `chunkConcurrency` (Default: `1`)
+  - resilientere Map-Phase: einzelne Chunk-Fehler brechen den Lauf nicht sofort ab
+
+### 🐛 Fixes
+- Retry-Mechanismus für Ollama non-streaming Requests bei `503/504` (3 Versuche mit Backoff).
+- Bessere Stabilität bei großen Transcripts und instabilen/proxy-basierten Ollama-Setups.
+
+### ⚠️ Hinweis
+- Chunking kann mit Ollama (insbesondere remote/proxy) zu langen Laufzeiten oder Timeouts führen.
+- Empfehlung: `chunkConcurrency = 1` und nur vorsichtig erhöhen.
+
 ## [1.13.1] – 2026-04-30
 
 ### 🐛 Fixes

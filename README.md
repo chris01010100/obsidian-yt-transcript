@@ -32,6 +32,7 @@ Jede generierte Note enthält:
 - `Prompt File Path` (optional)
 - `Output Folder` (optional)
 - `Enable Chunking for long transcripts` (neu, Standard: aktiviert)
+- `Chunk map concurrency` (Standard: `1`, vorsichtig erhöhen)
 
 ## Chunking für lange Transcripts
 
@@ -44,6 +45,11 @@ Vorteile:
 - stabiler bei Token-Limits
 - bessere Verarbeitung großer Videos
 - bestehender Note-Output bleibt unverändert
+
+Wichtiger Hinweis (Ollama):
+- Chunking ist insbesondere mit Ollama (lokal oder remote über Proxy) mit Vorsicht zu verwenden.
+- Höhere `Chunk map concurrency` kann Laufzeit, Last und Timeout-Risiko (z. B. 503/504) deutlich erhöhen.
+- Empfohlener Startwert: `Chunk map concurrency = 1`.
 
 ## Verhalten ohne offene Note
 

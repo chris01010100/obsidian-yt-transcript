@@ -16,6 +16,7 @@ export interface SummarizationOptions {
     modelName?: string;
     createdAt?: string;
     enableChunking?: boolean;
+    chunkConcurrency?: number;
 }
 
 export type SummaryChunkHandler = (chunk: string, fullText: string) => void | Promise<void>;
@@ -66,7 +67,9 @@ interface PromptMetadata {
 
 export class SummarizationService {
     private static readonly MAX_SINGLE_PASS_CHARS = 12000;
-    private static readonly CHUNK_MAX_CHARS = 6000;
+    private static readonly CHUNK_MAX_CHARS = 10000;
+    private static readonly DEFAULT_CHUNK_MAP_CONCURRENCY = 1;
+    private static readonly RETRYABLE_STATUS_CODES = new Set([503, 504]);
     private static readonly CHUNK_PROMPT = [
         "Create a concise Markdown summary for this transcript chunk.",
         "Focus on core facts, key arguments and actionable steps.",
@@ -221,14 +224,31 @@ export class SummarizationService {
             return this.summarize(text, noChunkOptions);
         }
 
+        const chunkConcurrencyRaw = options?.chunkConcurrency ?? SummarizationService.DEFAULT_CHUNK_MAP_CONCURRENCY;
+        const chunkConcurrency = Math.max(1, Math.floor(chunkConcurrencyRaw));
+
         const chunkSummaries: string[] = [];
-        for (const chunk of chunks) {
-            const chunkSummary = await this.summarize(chunk, {
-                ...options,
-                promptTemplate: SummarizationService.CHUNK_PROMPT,
-                enableChunking: false,
-            });
-            chunkSummaries.push(chunkSummary);
+        for (let i = 0; i < chunks.length; i += chunkConcurrency) {
+            const batch = chunks.slice(i, i + chunkConcurrency);
+            const batchSummaries = await Promise.all(
+                batch.map(async (chunk, batchIndex) => {
+                    try {
+                        return await this.summarize(chunk, {
+                            ...options,
+                            promptTemplate: SummarizationService.CHUNK_PROMPT,
+                            enableChunking: false,
+                        });
+                    } catch (error) {
+                        console.warn(`Chunk summarization failed at index ${i + batchIndex}:`, error);
+                        return "";
+                    }
+                }),
+            );
+            chunkSummaries.push(...batchSummaries.filter((summary) => summary.trim().length > 0));
+        }
+
+        if (chunkSummaries.length === 0) {
+            throw new Error("All chunk summarization requests failed.");
         }
 
         const reduceInput = this.buildChunkedReduceInput(chunkSummaries);
@@ -259,17 +279,10 @@ export class SummarizationService {
         const prompt = this.buildPrompt(text, options.language, options);
         const baseUrl = options.baseUrl.replace(/\/$/, "");
 
-        const response = await requestUrl({
-            url: `${baseUrl}/api/generate`,
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                model: options.model,
-                prompt,
-                stream: false,
-            }),
+        const response = await this.requestOllamaGenerateWithRetry(baseUrl, {
+            model: options.model,
+            prompt,
+            stream: false,
         });
 
         if (response.status >= 400) {
@@ -523,6 +536,41 @@ export class SummarizationService {
 
             return delta;
         });
+    }
+
+    private async requestOllamaGenerateWithRetry(
+        baseUrl: string,
+        payload: {
+            model: string;
+            prompt: string;
+            stream: boolean;
+        },
+    ): Promise<Awaited<ReturnType<typeof requestUrl>>> {
+        const maxAttempts = 3;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            const response = await requestUrl({
+                url: `${baseUrl}/api/generate`,
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(payload),
+            });
+
+            if (!SummarizationService.RETRYABLE_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
+                return response;
+            }
+
+            const delayMs = 500 * (2 ** (attempt - 1));
+            await this.sleep(delayMs);
+        }
+
+        throw new Error("Ollama request retry loop failed unexpectedly.");
+    }
+
+    private sleep(ms: number): Promise<void> {
+        return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
     private async safeReadResponseText(response: Response): Promise<string> {
