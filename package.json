@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-ytranscript",
-	"version": "1.13.5",
+	"version": "1.13.6",
 	"description": "Fetch YouTube transcripts and generate AI summaries directly into your notes with customizable prompts.",
 	"main": "main.js",
 	"scripts": {

@@ -88,7 +88,7 @@ export class SummarizationService {
     private static readonly MAX_SINGLE_PASS_CHARS = 12000;
     private static readonly CHUNK_MAX_CHARS = 10000;
     private static readonly DEFAULT_CHUNK_MAP_CONCURRENCY = 1;
-    private static readonly RETRYABLE_STATUS_CODES = new Set([503, 504]);
+    private static readonly RETRYABLE_STATUS_CODES = new Set([429, 503, 504]);
     private static readonly CHUNK_PROMPT = [
         "Create a concise Markdown summary for this transcript chunk.",
         "Focus on core facts, key arguments and actionable steps.",
@@ -321,17 +321,27 @@ export class SummarizationService {
         });
 
         if (streamFinal && onChunk) {
-            const finalSummary = await this.summarizeStream(reduceInput, finalOptions, onChunk);
-            debugLog(debugEnabled, "Final merge ok", {
-                summaryLength: finalSummary.length,
-            });
-            return finalSummary;
+            try {
+                const finalSummary = await this.summarizeStream(reduceInput, finalOptions, onChunk);
+                debugLog(debugEnabled, "Final merge ok", {
+                    summaryLength: finalSummary.length,
+                });
+                return finalSummary;
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                debugLog(debugEnabled, "Final merge stream failed, falling back to non-streaming", {
+                    error: errorMessage,
+                });
+            }
         }
 
         const finalSummary = await this.summarize(reduceInput, finalOptions);
         debugLog(debugEnabled, "Final merge ok", {
             summaryLength: finalSummary.length,
         });
+        if (streamFinal && onChunk) {
+            await onChunk(finalSummary, finalSummary);
+        }
         return finalSummary;
     }
 
@@ -396,7 +406,7 @@ export class SummarizationService {
 
         let response: Response;
         try {
-            response = await fetch(`${baseUrl}/api/generate`, {
+            response = await this.fetchWithRetry(`${baseUrl}/api/generate`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -572,7 +582,7 @@ export class SummarizationService {
 
         const prompt = this.buildPrompt(text, options.language, options);
 
-        const response = await fetch(options.url, {
+        const response = await this.fetchWithRetry(options.url, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -620,9 +630,9 @@ export class SummarizationService {
             stream: boolean;
         },
     ): Promise<Awaited<ReturnType<typeof requestUrl>>> {
-        const maxAttempts = 3;
+        let attempt = 1;
 
-        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        while (true) {
             const response = await requestUrl({
                 url: `${baseUrl}/api/generate`,
                 method: "POST",
@@ -632,15 +642,80 @@ export class SummarizationService {
                 body: JSON.stringify(payload),
             });
 
-            if (!SummarizationService.RETRYABLE_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
+            const retryPolicy = this.getRetryPolicy(response.status);
+            if (!SummarizationService.RETRYABLE_STATUS_CODES.has(response.status) || attempt >= retryPolicy.maxAttempts) {
                 return response;
             }
 
-            const delayMs = 500 * (2 ** (attempt - 1));
+            const delayMs = this.getRetryDelayMs(response.status, attempt);
             await this.sleep(delayMs);
+            attempt += 1;
+        }
+    }
+
+    private getRetryPolicy(status: number): { maxAttempts: number; baseDelayMs: number } {
+        if (status === 429) {
+            return { maxAttempts: 4, baseDelayMs: 2000 };
         }
 
-        throw new Error("Ollama request retry loop failed unexpectedly.");
+        if (status === 504) {
+            return { maxAttempts: 3, baseDelayMs: 1000 };
+        }
+
+        if (status === 503) {
+            return { maxAttempts: 3, baseDelayMs: 500 };
+        }
+
+        return { maxAttempts: 1, baseDelayMs: 0 };
+    }
+
+    private getRetryDelayMs(status: number, attempt: number, retryAfterSeconds?: number): number {
+        if (typeof retryAfterSeconds === "number" && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+            return Math.floor(retryAfterSeconds * 1000);
+        }
+
+        const policy = this.getRetryPolicy(status);
+        const exponentialDelay = policy.baseDelayMs * (2 ** Math.max(0, attempt - 1));
+        const jitter = Math.floor(Math.random() * 200);
+        return exponentialDelay + jitter;
+    }
+
+    private parseRetryAfterSeconds(response: Response): number | undefined {
+        const retryAfter = response.headers.get("retry-after");
+        if (!retryAfter) {
+            return undefined;
+        }
+
+        const retryAfterValue = Number.parseInt(retryAfter, 10);
+        return Number.isNaN(retryAfterValue) ? undefined : retryAfterValue;
+    }
+
+    private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+        let attempt = 1;
+
+        while (true) {
+            let response: Response;
+            try {
+                response = await fetch(url, init);
+            } catch (error) {
+                if (attempt >= 3) {
+                    throw error;
+                }
+
+                await this.sleep(this.getRetryDelayMs(503, attempt));
+                attempt += 1;
+                continue;
+            }
+
+            const retryPolicy = this.getRetryPolicy(response.status);
+            if (!SummarizationService.RETRYABLE_STATUS_CODES.has(response.status) || attempt >= retryPolicy.maxAttempts) {
+                return response;
+            }
+
+            const retryAfterSeconds = this.parseRetryAfterSeconds(response);
+            await this.sleep(this.getRetryDelayMs(response.status, attempt, retryAfterSeconds));
+            attempt += 1;
+        }
     }
 
     private sleep(ms: number): Promise<void> {

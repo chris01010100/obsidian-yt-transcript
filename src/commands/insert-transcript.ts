@@ -41,7 +41,7 @@ export class InsertTranscriptCommand {
 	/**
 	 * Executes the insert transcript command with default settings
 	 */
-	async execute(editor: Editor): Promise<void> {
+	async execute(editor?: Editor): Promise<void> {
 		await this.executeWithOptions(editor, {});
 	}
 
@@ -49,7 +49,7 @@ export class InsertTranscriptCommand {
 	 * Executes the insert transcript command with custom options
 	 */
 	async executeWithOptions(
-		editor: Editor,
+		editor: Editor | undefined,
 		options: InsertTranscriptOptions,
 	): Promise<void> {
 		let statusRequestId: number | undefined;
@@ -66,7 +66,7 @@ export class InsertTranscriptCommand {
 
 			const { url } = promptInput;
 			new Notice("Generating YouTube summary…");
-			const insertionStart = editor.getCursor();
+			const insertionStart = editor ? editor.getCursor() : null;
 			const loadingText = [
 				`## Summary`,
 				"Generating summary…",
@@ -76,7 +76,9 @@ export class InsertTranscriptCommand {
 				"",
 			].join("\n");
 
-			editor.replaceRange(loadingText, insertionStart);
+			if (editor && insertionStart) {
+				editor.replaceRange(loadingText, insertionStart);
+			}
 
 			// Validate URL
 			if (!URLDetector.isValidYouTubeUrl(url)) {
@@ -131,9 +133,10 @@ export class InsertTranscriptCommand {
 				formatOptions,
 			);
 
-			let currentOutputEnd = editor.offsetToPos(
-				editor.posToOffset(insertionStart) + loadingText.length,
-			);
+			let currentOutputEnd =
+				editor && insertionStart
+					? editor.offsetToPos(editor.posToOffset(insertionStart) + loadingText.length)
+					: null;
 			let lastStreamUpdate = 0;
 			let streamedSummaryText = "";
 			const chunkingEnabled = this.plugin.settings?.enableChunking ?? true;
@@ -158,7 +161,11 @@ export class InsertTranscriptCommand {
 					"",
 				].join("\n");
 
-				editor.replaceRange(errorText, insertionStart, currentOutputEnd);
+				if (editor && insertionStart && currentOutputEnd) {
+					editor.replaceRange(errorText, insertionStart, currentOutputEnd);
+				} else {
+					await this.writeOutputToActiveFile(errorText);
+				}
 				return;
 			}
 
@@ -209,6 +216,10 @@ export class InsertTranscriptCommand {
 						this.plugin.setStatusForRequest?.(statusRequestId, "YT: Final merge...");
 					}
 
+					if (!editor || !insertionStart || !currentOutputEnd) {
+						return;
+					}
+
 					streamedSummaryText = fullSummary;
 					const now = Date.now();
 
@@ -238,7 +249,11 @@ export class InsertTranscriptCommand {
 
 			if (!output.trim()) return;
 
-			editor.replaceRange(output, insertionStart, currentOutputEnd);
+			if (editor && insertionStart && currentOutputEnd) {
+				editor.replaceRange(output, insertionStart, currentOutputEnd);
+			} else {
+				await this.writeOutputToActiveFile(output);
+			}
 			await this.renameActiveNote(metadata.videoTitle);
 			if (chunkingActive) {
 				this.plugin.setStatusForRequest?.(
@@ -253,7 +268,12 @@ export class InsertTranscriptCommand {
 			new Notice("YouTube summary inserted.");
 		} catch (error) {
 			// Silently fail - errors are expected (network issues, no transcript, etc.)
-			new Notice("Failed to generate YouTube summary. Check developer console.");
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			if (errorMessage.includes("429")) {
+				new Notice("Rate limited by provider. Retried automatically but failed.");
+			} else {
+				new Notice("Failed to generate YouTube summary. Check developer console.");
+			}
 			if (statusRequestId !== undefined) {
 				this.plugin.completeStatusRequest?.(statusRequestId, "YT: Failed");
 			}
@@ -272,7 +292,7 @@ export class InsertTranscriptCommand {
 	 * Always shows prompt, but pre-populates with detected URL
 	 */
 	private async getYouTubeUrlWithConfirmation(
-		editor: Editor,
+		editor?: Editor,
 	): Promise<PromptInputResult | null> {
 		// Try to detect URL from selection first, then clipboard
 		const detectedUrl = await this.detectYouTubeUrl(editor);
@@ -300,7 +320,7 @@ export class InsertTranscriptCommand {
 	/**
 	 * Detects YouTube URL from selection or clipboard (for pre-populating prompt)
 	 */
-	private async detectYouTubeUrl(editor: Editor): Promise<string | null> {
+	private async detectYouTubeUrl(editor?: Editor): Promise<string | null> {
 		// 1. Try to get URL from selection
 		const selectionUrl = this.getUrlFromSelection(editor);
 		if (selectionUrl) {
@@ -320,7 +340,11 @@ export class InsertTranscriptCommand {
 	/**
 	 * Gets URL from current editor selection
 	 */
-	private getUrlFromSelection(editor: Editor): string | null {
+	private getUrlFromSelection(editor?: Editor): string | null {
+		if (!editor) {
+			return null;
+		}
+
 		try {
 			const selectedText = editor.somethingSelected()
 				? editor.getSelection()
@@ -558,6 +582,15 @@ export class InsertTranscriptCommand {
 
 	private quoteYaml(value: string): string {
 		return JSON.stringify(value || "");
+	}
+
+	private async writeOutputToActiveFile(output: string): Promise<void> {
+		const activeFile = this.plugin.app.workspace.getActiveFile();
+		if (!(activeFile instanceof TFile)) {
+			return;
+		}
+
+		await this.plugin.app.vault.modify(activeFile, output);
 	}
 
 	private async renameActiveNote(videoTitle: string): Promise<void> {

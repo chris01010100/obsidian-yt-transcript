@@ -50,8 +50,9 @@ Vorteile:
 
 Wichtiger Hinweis (Ollama):
 - Chunking ist insbesondere mit Ollama (lokal oder remote über Proxy) mit Vorsicht zu verwenden.
-- Höhere `Chunk map concurrency` kann Laufzeit, Last und Timeout-Risiko (z. B. 503/504) deutlich erhöhen.
+- Höhere `Chunk map concurrency` kann Laufzeit, Last und Timeout-Risiko (z. B. 429/503/504) deutlich erhöhen.
 - Empfohlener Startwert: `Chunk map concurrency = 1`.
+- Der Service nutzt Retry/Backoff für 429/503/504 und versucht beim Final Merge einen non-streaming Fallback.
 
 ## Statusleiste
 
@@ -69,3 +70,6 @@ Reset erfolgt automatisch nach 120 Sekunden auf `YTranscript: Ready`.
 
 Wenn kein Editor offen ist, erstellt das Plugin automatisch eine neue Note
 (im optional konfigurierten `Output Folder`) und schreibt dort den Inhalt.
+
+Bei Reading Mode versucht das Plugin vor dem Einfügen auf Source/Edit Mode zu wechseln.
+Falls kein Editor verfügbar ist, wird der finale Output sicher direkt in die Datei geschrieben (Hybrid-Fallback).

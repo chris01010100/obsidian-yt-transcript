@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.13.6] – 2026-05-01
+
+### ✨ Verbesserungen
+- Robustes Handling für Obsidian Read/Reading Mode im Haupt-Command:
+  - Wechsel in Source/Edit Mode wird aktiv versucht.
+  - Wenn keine Note offen ist, wird eine neue Markdown-Note erstellt und geöffnet.
+- Hybrid-Write-Strategie ergänzt:
+  - Mit Editor: Live-Updates im Dokument wie bisher.
+  - Ohne Editor: finaler Inhalt wird sicher via `vault.modify` geschrieben.
+
+### 🐛 Fixes
+- Retry-Handling für LLM-Requests erweitert:
+  - `429 Too Many Requests` wird jetzt zusätzlich zu `503/504` behandelt.
+  - Längeres Backoff für `429` inkl. Jitter und optionalem `Retry-After`.
+- Final-Merge in Chunking stabilisiert:
+  - Bei Streaming-Fehlern Fallback auf non-streaming statt sofortigem Abbruch.
+- User-Feedback bei dauerhaftem Rate-Limit verbessert.
+
 ## [1.13.5] – 2026-05-01
 
 ### 🐛 Fixes

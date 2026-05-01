@@ -87,31 +87,97 @@ export default class YTranscriptPlugin extends Plugin {
 			id: "insert-youtube-transcript",
 			name: "YouTube → AI Summary Note",
 			callback: async () => {
-				let view = this.app.workspace.getActiveViewOfType(MarkdownView);
-
-				// If no active markdown view → create a new note
-				if (!view) {
-					const outputFolder = this.settings.outputFolder.trim();
-					const folderPrefix = outputFolder ? `${outputFolder.replace(/\/$/, "")}/` : "";
-					const file = await this.app.vault.create(
-						`${folderPrefix}YouTube Transcript ${Date.now()}.md`,
-						""
-					);
-
-					await this.app.workspace.getLeaf(true).openFile(file);
-					view = this.app.workspace.getActiveViewOfType(MarkdownView);
-				}
-
-				if (!view) {
-					new Notice("No editor available.");
+				const target = await this.ensureActiveMarkdownEditor();
+				if (!target.view) {
+					new Notice("No markdown note available.");
 					return;
 				}
 
-				await this.insertTranscriptCommand.execute(view.editor);
+				if (!target.editor) {
+					new Notice("No editor available. Writing note without live editor updates.");
+				}
+
+				await this.insertTranscriptCommand.execute(target.editor ?? undefined);
 			},
 		});
 
 		this.addSettingTab(new YTranslateSettingTab(this.app, this));
+	}
+
+	private async ensureActiveMarkdownEditor(): Promise<{
+		view: MarkdownView | null;
+		editor: Editor | null;
+	}> {
+		let view = this.app.workspace.getActiveViewOfType(MarkdownView);
+
+		if (!view) {
+			const outputFolder = this.settings.outputFolder.trim();
+			const folderPrefix = outputFolder ? `${outputFolder.replace(/\/$/, "")}/` : "";
+			const file = await this.app.vault.create(
+				`${folderPrefix}YouTube Transcript ${Date.now()}.md`,
+				"",
+			);
+
+			const leaf = this.app.workspace.getLeaf(true);
+			await leaf.openFile(file);
+			view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		}
+
+		if (!view) {
+			return { view: null, editor: null };
+		}
+
+		await this.ensureViewSourceMode(view);
+
+		for (let attempt = 0; attempt < 3; attempt += 1) {
+			const currentView = this.app.workspace.getActiveViewOfType(MarkdownView);
+			if (currentView?.editor) {
+				return { view: currentView, editor: currentView.editor };
+			}
+
+			await this.sleep(100 * (attempt + 1));
+		}
+
+		const fallbackView = this.app.workspace.getActiveViewOfType(MarkdownView);
+		return { view: fallbackView || view, editor: fallbackView?.editor ?? null };
+	}
+
+	private async ensureViewSourceMode(view: MarkdownView): Promise<void> {
+		const anyView = view as any;
+		try {
+			if (typeof anyView.setMode === "function") {
+				await anyView.setMode("source");
+				return;
+			}
+
+			if (typeof anyView.setSourceMode === "function") {
+				await anyView.setSourceMode();
+				return;
+			}
+
+			const leaf = anyView.leaf;
+			if (!leaf || typeof leaf.getViewState !== "function" || typeof leaf.setViewState !== "function") {
+				return;
+			}
+
+			const state = leaf.getViewState();
+			await leaf.setViewState(
+				{
+					...state,
+					state: {
+						...(state.state || {}),
+						mode: "source",
+					},
+				},
+				{ focus: true },
+			);
+		} catch (error) {
+			console.warn("Failed to switch markdown view to source mode:", error);
+		}
+	}
+
+	private async sleep(ms: number): Promise<void> {
+		await new Promise((resolve) => setTimeout(resolve, ms));
 	}
 
 	async openView(url: string, summaryLanguage?: string) {
