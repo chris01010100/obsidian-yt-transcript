@@ -57,9 +57,11 @@ Wichtiger Hinweis (Ollama):
 
 Während der Ausführung zeigt die Obsidian-Statusleiste den Fortschritt:
 - `YT: Fetching transcript...`
-- `YT: Chunking X/Y...` (bei aktivem Chunking)
+- `YT: Chunking X/Y...` (bei aktivem Chunking, live fortlaufend)
 - `YT: Final merge...`
 - `YT: Done` oder `YT: Failed`
+
+Hinweis: Bei langen Läufen wird der Chunk-Fortschritt kontinuierlich aktualisiert, damit kein vorzeitiges `Ready` erscheint.
 
 Reset erfolgt automatisch nach 120 Sekunden auf `YTranscript: Ready`.
 

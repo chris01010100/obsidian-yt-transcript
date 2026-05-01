@@ -192,6 +192,16 @@ export class InsertTranscriptCommand {
 					enableChunking: this.plugin.settings?.enableChunking,
 					chunkConcurrency: this.plugin.settings?.chunkConcurrency,
 					enableDebugLogging: debugEnabled,
+					onChunkProgress: (current, total) => {
+						if (!chunkingActive) {
+							return;
+						}
+
+						this.plugin.setStatusForRequest?.(
+							statusRequestId,
+							`YT: Chunking ${current}/${total}...`,
+						);
+					},
 				},
 				async (_chunk, fullSummary) => {
 					if (!finalMergeStarted) {

@@ -18,6 +18,7 @@ export interface SummarizationOptions {
     enableChunking?: boolean;
     chunkConcurrency?: number;
     enableDebugLogging?: boolean;
+    onChunkProgress?: (current: number, total: number) => void;
 }
 
 export type SummaryChunkHandler = (chunk: string, fullText: string) => void | Promise<void>;
@@ -269,6 +270,7 @@ export class SummarizationService {
         const chunkConcurrency = Math.max(1, Math.floor(chunkConcurrencyRaw));
 
         const chunkSummaries: string[] = [];
+        let processedChunks = 0;
         for (let i = 0; i < chunks.length; i += chunkConcurrency) {
             const batch = chunks.slice(i, i + chunkConcurrency);
             const batchSummaries = await Promise.all(
@@ -297,6 +299,9 @@ export class SummarizationService {
                         });
                         console.warn(`Chunk summarization failed at index ${i + batchIndex}:`, error);
                         return "";
+                    } finally {
+                        processedChunks += 1;
+                        options?.onChunkProgress?.(processedChunks, chunks.length);
                     }
                 }),
             );

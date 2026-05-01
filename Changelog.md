@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.5] – 2026-05-01
+
+### 🐛 Fixes
+- Statusleisten-Fortschritt für Chunking korrigiert: `YT: Chunking X/Y...` wird jetzt während der Map-Phase live aktualisiert.
+- Vorzeitiges `YTranscript: Ready` bei langen Chunk-Läufen behoben (durch laufende Progress-Updates).
+- Final-Merge-Status erscheint jetzt zeitlich konsistent nach abgeschlossener Chunk-Phase.
+
 ## [1.13.4] – 2026-05-01
 
 ### ✨ Verbesserungen
