@@ -645,16 +645,26 @@ ${summary.trim()}`).join("\n\n");
       stream: streamFinal
     });
     if (streamFinal && onChunk) {
-      const finalSummary2 = await this.summarizeStream(reduceInput, finalOptions, onChunk);
-      debugLog(debugEnabled, "Final merge ok", {
-        summaryLength: finalSummary2.length
-      });
-      return finalSummary2;
+      try {
+        const finalSummary2 = await this.summarizeStream(reduceInput, finalOptions, onChunk);
+        debugLog(debugEnabled, "Final merge ok", {
+          summaryLength: finalSummary2.length
+        });
+        return finalSummary2;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        debugLog(debugEnabled, "Final merge stream failed, falling back to non-streaming", {
+          error: errorMessage
+        });
+      }
     }
     const finalSummary = await this.summarize(reduceInput, finalOptions);
     debugLog(debugEnabled, "Final merge ok", {
       summaryLength: finalSummary.length
     });
+    if (streamFinal && onChunk) {
+      await onChunk(finalSummary, finalSummary);
+    }
     return finalSummary;
   }
   async summarizeWithOllama(text, options) {
@@ -683,7 +693,7 @@ ${summary.trim()}`).join("\n\n");
     const baseUrl = options.baseUrl.replace(/\/$/, "");
     let response;
     try {
-      response = await fetch(`${baseUrl}/api/generate`, {
+      response = await this.fetchWithRetry(`${baseUrl}/api/generate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -794,7 +804,7 @@ ${summary.trim()}`).join("\n\n");
       throw new Error("API key is missing.");
     }
     const prompt = this.buildPrompt(text, options.language, options);
-    const response = await fetch(options.url, {
+    const response = await this.fetchWithRetry(options.url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -831,8 +841,8 @@ ${summary.trim()}`).join("\n\n");
     });
   }
   async requestOllamaGenerateWithRetry(baseUrl, payload) {
-    const maxAttempts = 3;
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    let attempt = 1;
+    while (true) {
       const response = await (0, import_obsidian2.requestUrl)({
         url: `${baseUrl}/api/generate`,
         method: "POST",
@@ -841,13 +851,66 @@ ${summary.trim()}`).join("\n\n");
         },
         body: JSON.stringify(payload)
       });
-      if (!_SummarizationService.RETRYABLE_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
+      const retryPolicy = this.getRetryPolicy(response.status);
+      if (!_SummarizationService.RETRYABLE_STATUS_CODES.has(response.status) || attempt >= retryPolicy.maxAttempts) {
         return response;
       }
-      const delayMs = 500 * 2 ** (attempt - 1);
+      const delayMs = this.getRetryDelayMs(response.status, attempt);
       await this.sleep(delayMs);
+      attempt += 1;
     }
-    throw new Error("Ollama request retry loop failed unexpectedly.");
+  }
+  getRetryPolicy(status) {
+    if (status === 429) {
+      return { maxAttempts: 4, baseDelayMs: 2e3 };
+    }
+    if (status === 504) {
+      return { maxAttempts: 3, baseDelayMs: 1e3 };
+    }
+    if (status === 503) {
+      return { maxAttempts: 3, baseDelayMs: 500 };
+    }
+    return { maxAttempts: 1, baseDelayMs: 0 };
+  }
+  getRetryDelayMs(status, attempt, retryAfterSeconds) {
+    if (typeof retryAfterSeconds === "number" && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+      return Math.floor(retryAfterSeconds * 1e3);
+    }
+    const policy = this.getRetryPolicy(status);
+    const exponentialDelay = policy.baseDelayMs * 2 ** Math.max(0, attempt - 1);
+    const jitter = Math.floor(Math.random() * 200);
+    return exponentialDelay + jitter;
+  }
+  parseRetryAfterSeconds(response) {
+    const retryAfter = response.headers.get("retry-after");
+    if (!retryAfter) {
+      return void 0;
+    }
+    const retryAfterValue = Number.parseInt(retryAfter, 10);
+    return Number.isNaN(retryAfterValue) ? void 0 : retryAfterValue;
+  }
+  async fetchWithRetry(url, init) {
+    let attempt = 1;
+    while (true) {
+      let response;
+      try {
+        response = await fetch(url, init);
+      } catch (error) {
+        if (attempt >= 3) {
+          throw error;
+        }
+        await this.sleep(this.getRetryDelayMs(503, attempt));
+        attempt += 1;
+        continue;
+      }
+      const retryPolicy = this.getRetryPolicy(response.status);
+      if (!_SummarizationService.RETRYABLE_STATUS_CODES.has(response.status) || attempt >= retryPolicy.maxAttempts) {
+        return response;
+      }
+      const retryAfterSeconds = this.parseRetryAfterSeconds(response);
+      await this.sleep(this.getRetryDelayMs(response.status, attempt, retryAfterSeconds));
+      attempt += 1;
+    }
   }
   sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -939,7 +1002,7 @@ ${summary.trim()}`).join("\n\n");
 _SummarizationService.MAX_SINGLE_PASS_CHARS = 12e3;
 _SummarizationService.CHUNK_MAX_CHARS = 1e4;
 _SummarizationService.DEFAULT_CHUNK_MAP_CONCURRENCY = 1;
-_SummarizationService.RETRYABLE_STATUS_CODES = /* @__PURE__ */ new Set([503, 504]);
+_SummarizationService.RETRYABLE_STATUS_CODES = /* @__PURE__ */ new Set([429, 503, 504]);
 _SummarizationService.CHUNK_PROMPT = [
   "Create a concise Markdown summary for this transcript chunk.",
   "Focus on core facts, key arguments and actionable steps.",
@@ -1598,7 +1661,7 @@ var InsertTranscriptCommand = class {
       }
       const { url } = promptInput;
       new import_obsidian5.Notice("Generating YouTube summary\u2026");
-      const insertionStart = editor.getCursor();
+      const insertionStart = editor ? editor.getCursor() : null;
       const loadingText = [
         `## Summary`,
         "Generating summary\u2026",
@@ -1607,7 +1670,9 @@ var InsertTranscriptCommand = class {
         "Loading transcript\u2026",
         ""
       ].join("\n");
-      editor.replaceRange(loadingText, insertionStart);
+      if (editor && insertionStart) {
+        editor.replaceRange(loadingText, insertionStart);
+      }
       if (!URLDetector.isValidYouTubeUrl(url)) {
         return;
       }
@@ -1641,9 +1706,7 @@ var InsertTranscriptCommand = class {
         url,
         formatOptions
       );
-      let currentOutputEnd = editor.offsetToPos(
-        editor.posToOffset(insertionStart) + loadingText.length
-      );
+      let currentOutputEnd = editor && insertionStart ? editor.offsetToPos(editor.posToOffset(insertionStart) + loadingText.length) : null;
       let lastStreamUpdate = 0;
       let streamedSummaryText = "";
       const chunkingEnabled = (_k = (_j = this.plugin.settings) == null ? void 0 : _j.enableChunking) != null ? _k : true;
@@ -1662,7 +1725,11 @@ var InsertTranscriptCommand = class {
           formattedTranscript,
           ""
         ].join("\n");
-        editor.replaceRange(errorText, insertionStart, currentOutputEnd);
+        if (editor && insertionStart && currentOutputEnd) {
+          editor.replaceRange(errorText, insertionStart, currentOutputEnd);
+        } else {
+          await this.writeOutputToActiveFile(errorText);
+        }
         return;
       }
       if (chunkingActive) {
@@ -1711,6 +1778,9 @@ var InsertTranscriptCommand = class {
             finalMergeStarted = true;
             (_b2 = (_a2 = this.plugin).setStatusForRequest) == null ? void 0 : _b2.call(_a2, statusRequestId, "YT: Final merge...");
           }
+          if (!editor || !insertionStart || !currentOutputEnd) {
+            return;
+          }
           streamedSummaryText = fullSummary;
           const now = Date.now();
           if (now - lastStreamUpdate < 250) {
@@ -1734,7 +1804,11 @@ var InsertTranscriptCommand = class {
         metadata
       );
       if (!output.trim()) return;
-      editor.replaceRange(output, insertionStart, currentOutputEnd);
+      if (editor && insertionStart && currentOutputEnd) {
+        editor.replaceRange(output, insertionStart, currentOutputEnd);
+      } else {
+        await this.writeOutputToActiveFile(output);
+      }
       await this.renameActiveNote(metadata.videoTitle);
       if (chunkingActive) {
         (_A = (_z = this.plugin).setStatusForRequest) == null ? void 0 : _A.call(
@@ -1749,7 +1823,12 @@ var InsertTranscriptCommand = class {
       });
       new import_obsidian5.Notice("YouTube summary inserted.");
     } catch (error) {
-      new import_obsidian5.Notice("Failed to generate YouTube summary. Check developer console.");
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes("429")) {
+        new import_obsidian5.Notice("Rate limited by provider. Retried automatically but failed.");
+      } else {
+        new import_obsidian5.Notice("Failed to generate YouTube summary. Check developer console.");
+      }
       if (statusRequestId !== void 0) {
         (_E = (_D = this.plugin).completeStatusRequest) == null ? void 0 : _E.call(_D, statusRequestId, "YT: Failed");
       }
@@ -1802,6 +1881,9 @@ var InsertTranscriptCommand = class {
    * Gets URL from current editor selection
    */
   getUrlFromSelection(editor) {
+    if (!editor) {
+      return null;
+    }
     try {
       const selectedText = editor.somethingSelected() ? editor.getSelection() : EditorExtensions.getSelectedText(editor);
       return URLDetector.extractYouTubeUrlFromText(selectedText);
@@ -1968,6 +2050,13 @@ var InsertTranscriptCommand = class {
   quoteYaml(value) {
     return JSON.stringify(value || "");
   }
+  async writeOutputToActiveFile(output) {
+    const activeFile = this.plugin.app.workspace.getActiveFile();
+    if (!(activeFile instanceof import_obsidian5.TFile)) {
+      return;
+    }
+    await this.plugin.app.vault.modify(activeFile, output);
+  }
   async renameActiveNote(videoTitle) {
     var _a;
     const activeFile = this.plugin.app.workspace.getActiveFile();
@@ -2058,25 +2147,80 @@ var YTranscriptPlugin = class extends import_obsidian6.Plugin {
       id: "insert-youtube-transcript",
       name: "YouTube \u2192 AI Summary Note",
       callback: async () => {
-        let view = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
-        if (!view) {
-          const outputFolder = this.settings.outputFolder.trim();
-          const folderPrefix = outputFolder ? `${outputFolder.replace(/\/$/, "")}/` : "";
-          const file = await this.app.vault.create(
-            `${folderPrefix}YouTube Transcript ${Date.now()}.md`,
-            ""
-          );
-          await this.app.workspace.getLeaf(true).openFile(file);
-          view = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
-        }
-        if (!view) {
-          new import_obsidian6.Notice("No editor available.");
+        var _a;
+        const target = await this.ensureActiveMarkdownEditor();
+        if (!target.view) {
+          new import_obsidian6.Notice("No markdown note available.");
           return;
         }
-        await this.insertTranscriptCommand.execute(view.editor);
+        if (!target.editor) {
+          new import_obsidian6.Notice("No editor available. Writing note without live editor updates.");
+        }
+        await this.insertTranscriptCommand.execute((_a = target.editor) != null ? _a : void 0);
       }
     });
     this.addSettingTab(new YTranslateSettingTab(this.app, this));
+  }
+  async ensureActiveMarkdownEditor() {
+    var _a;
+    let view = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
+    if (!view) {
+      const outputFolder = this.settings.outputFolder.trim();
+      const folderPrefix = outputFolder ? `${outputFolder.replace(/\/$/, "")}/` : "";
+      const file = await this.app.vault.create(
+        `${folderPrefix}YouTube Transcript ${Date.now()}.md`,
+        ""
+      );
+      const leaf = this.app.workspace.getLeaf(true);
+      await leaf.openFile(file);
+      view = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
+    }
+    if (!view) {
+      return { view: null, editor: null };
+    }
+    await this.ensureViewSourceMode(view);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const currentView = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
+      if (currentView == null ? void 0 : currentView.editor) {
+        return { view: currentView, editor: currentView.editor };
+      }
+      await this.sleep(100 * (attempt + 1));
+    }
+    const fallbackView = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
+    return { view: fallbackView || view, editor: (_a = fallbackView == null ? void 0 : fallbackView.editor) != null ? _a : null };
+  }
+  async ensureViewSourceMode(view) {
+    const anyView = view;
+    try {
+      if (typeof anyView.setMode === "function") {
+        await anyView.setMode("source");
+        return;
+      }
+      if (typeof anyView.setSourceMode === "function") {
+        await anyView.setSourceMode();
+        return;
+      }
+      const leaf = anyView.leaf;
+      if (!leaf || typeof leaf.getViewState !== "function" || typeof leaf.setViewState !== "function") {
+        return;
+      }
+      const state = leaf.getViewState();
+      await leaf.setViewState(
+        {
+          ...state,
+          state: {
+            ...state.state || {},
+            mode: "source"
+          }
+        },
+        { focus: true }
+      );
+    } catch (error) {
+      console.warn("Failed to switch markdown view to source mode:", error);
+    }
+  }
+  async sleep(ms) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
   async openView(url, summaryLanguage) {
     const leaf = this.app.workspace.getRightLeaf(false);
