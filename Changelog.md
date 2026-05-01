@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.13.8] – 2026-05-01
+
+### 🐛 Fixes
+- Fixed empty new note when Obsidian opens it in Reading Mode.
+- Final output now writes to a stable target `TFile` via `vault.modify(...)` when no editor is available.
+- Streaming/live updates still use `editor.replaceRange(...)` only when a real editor exists.
+- Rename flow now uses the same target file handle and resolves the renamed `TFile` path safely.
+
+### 🔒 Stability
+- No MarkdownView internals touched.
+- No `leaf.setViewState` / `currentMode` manipulation.
+
 ## [1.13.7] – 2026-05-01
 
 ### 🐛 Fixes

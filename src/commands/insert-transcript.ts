@@ -53,6 +53,7 @@ export class InsertTranscriptCommand {
 		options: InsertTranscriptOptions,
 	): Promise<void> {
 		let statusRequestId: number | undefined;
+		let targetFile = this.getActiveTargetFile();
 
 		try {
 			const debugEnabled = this.plugin.settings?.enableDebugLogging === true;
@@ -65,6 +66,7 @@ export class InsertTranscriptCommand {
 			}
 
 			const { url } = promptInput;
+			targetFile = this.getActiveTargetFile() || targetFile;
 			new Notice("Generating YouTube summary…");
 			const insertionStart = editor ? editor.getCursor() : null;
 			const loadingText = [
@@ -163,8 +165,8 @@ export class InsertTranscriptCommand {
 
 				if (editor && insertionStart && currentOutputEnd) {
 					editor.replaceRange(errorText, insertionStart, currentOutputEnd);
-				} else {
-					await this.writeOutputToActiveFile(errorText);
+				} else if (targetFile) {
+					await this.writeOutputToFile(targetFile, errorText);
 				}
 				return;
 			}
@@ -251,10 +253,12 @@ export class InsertTranscriptCommand {
 
 			if (editor && insertionStart && currentOutputEnd) {
 				editor.replaceRange(output, insertionStart, currentOutputEnd);
+			} else if (targetFile) {
+				await this.writeOutputToFile(targetFile, output);
 			} else {
-				await this.writeOutputToActiveFile(output);
+				throw new Error("No target file available for writing output.");
 			}
-			await this.renameActiveNote(metadata.videoTitle);
+			targetFile = await this.renameTargetNote(targetFile, metadata.videoTitle);
 			if (chunkingActive) {
 				this.plugin.setStatusForRequest?.(
 					statusRequestId,
@@ -584,32 +588,39 @@ export class InsertTranscriptCommand {
 		return JSON.stringify(value || "");
 	}
 
-	private async writeOutputToActiveFile(output: string): Promise<void> {
+	private getActiveTargetFile(): TFile | null {
 		const activeFile = this.plugin.app.workspace.getActiveFile();
-		if (!(activeFile instanceof TFile)) {
-			return;
-		}
-
-		await this.plugin.app.vault.modify(activeFile, output);
+		return activeFile instanceof TFile ? activeFile : null;
 	}
 
-	private async renameActiveNote(videoTitle: string): Promise<void> {
-		const activeFile = this.plugin.app.workspace.getActiveFile();
-		if (!(activeFile instanceof TFile)) return;
+	private async writeOutputToFile(file: TFile, output: string): Promise<void> {
+		await this.plugin.app.vault.modify(file, output);
+	}
+
+	private async renameTargetNote(file: TFile | null, videoTitle: string): Promise<TFile | null> {
+		if (!(file instanceof TFile)) {
+			return file;
+		}
 
 		const safeFileName = this.sanitizeFileName(videoTitle);
-		if (!safeFileName) return;
+		if (!safeFileName) {
+			return file;
+		}
 
-		const currentFolder = activeFile.parent?.path || "";
+		const currentFolder = file.parent?.path || "";
 		const targetPath = await this.getAvailableFilePath(
 			currentFolder,
 			safeFileName,
-			activeFile.path,
+			file.path,
 		);
 
-		if (targetPath === activeFile.path) return;
+		if (targetPath === file.path) {
+			return file;
+		}
 
-		await this.plugin.app.fileManager.renameFile(activeFile, targetPath);
+		await this.plugin.app.fileManager.renameFile(file, targetPath);
+		const renamedFile = this.plugin.app.vault.getAbstractFileByPath(targetPath);
+		return renamedFile instanceof TFile ? renamedFile : file;
 	}
 
 	private sanitizeFileName(title: string): string {

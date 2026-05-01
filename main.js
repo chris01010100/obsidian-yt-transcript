@@ -1652,6 +1652,7 @@ var InsertTranscriptCommand = class {
   async executeWithOptions(editor, options) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E;
     let statusRequestId;
+    let targetFile = this.getActiveTargetFile();
     try {
       const debugEnabled = ((_a = this.plugin.settings) == null ? void 0 : _a.enableDebugLogging) === true;
       debugLog(debugEnabled, "Insert transcript flow start");
@@ -1660,6 +1661,7 @@ var InsertTranscriptCommand = class {
         return;
       }
       const { url } = promptInput;
+      targetFile = this.getActiveTargetFile() || targetFile;
       new import_obsidian5.Notice("Generating YouTube summary\u2026");
       const insertionStart = editor ? editor.getCursor() : null;
       const loadingText = [
@@ -1727,8 +1729,8 @@ var InsertTranscriptCommand = class {
         ].join("\n");
         if (editor && insertionStart && currentOutputEnd) {
           editor.replaceRange(errorText, insertionStart, currentOutputEnd);
-        } else {
-          await this.writeOutputToActiveFile(errorText);
+        } else if (targetFile) {
+          await this.writeOutputToFile(targetFile, errorText);
         }
         return;
       }
@@ -1806,10 +1808,12 @@ var InsertTranscriptCommand = class {
       if (!output.trim()) return;
       if (editor && insertionStart && currentOutputEnd) {
         editor.replaceRange(output, insertionStart, currentOutputEnd);
+      } else if (targetFile) {
+        await this.writeOutputToFile(targetFile, output);
       } else {
-        await this.writeOutputToActiveFile(output);
+        throw new Error("No target file available for writing output.");
       }
-      await this.renameActiveNote(metadata.videoTitle);
+      targetFile = await this.renameTargetNote(targetFile, metadata.videoTitle);
       if (chunkingActive) {
         (_A = (_z = this.plugin).setStatusForRequest) == null ? void 0 : _A.call(
           _z,
@@ -2050,27 +2054,34 @@ var InsertTranscriptCommand = class {
   quoteYaml(value) {
     return JSON.stringify(value || "");
   }
-  async writeOutputToActiveFile(output) {
+  getActiveTargetFile() {
     const activeFile = this.plugin.app.workspace.getActiveFile();
-    if (!(activeFile instanceof import_obsidian5.TFile)) {
-      return;
-    }
-    await this.plugin.app.vault.modify(activeFile, output);
+    return activeFile instanceof import_obsidian5.TFile ? activeFile : null;
   }
-  async renameActiveNote(videoTitle) {
+  async writeOutputToFile(file, output) {
+    await this.plugin.app.vault.modify(file, output);
+  }
+  async renameTargetNote(file, videoTitle) {
     var _a;
-    const activeFile = this.plugin.app.workspace.getActiveFile();
-    if (!(activeFile instanceof import_obsidian5.TFile)) return;
+    if (!(file instanceof import_obsidian5.TFile)) {
+      return file;
+    }
     const safeFileName = this.sanitizeFileName(videoTitle);
-    if (!safeFileName) return;
-    const currentFolder = ((_a = activeFile.parent) == null ? void 0 : _a.path) || "";
+    if (!safeFileName) {
+      return file;
+    }
+    const currentFolder = ((_a = file.parent) == null ? void 0 : _a.path) || "";
     const targetPath = await this.getAvailableFilePath(
       currentFolder,
       safeFileName,
-      activeFile.path
+      file.path
     );
-    if (targetPath === activeFile.path) return;
-    await this.plugin.app.fileManager.renameFile(activeFile, targetPath);
+    if (targetPath === file.path) {
+      return file;
+    }
+    await this.plugin.app.fileManager.renameFile(file, targetPath);
+    const renamedFile = this.plugin.app.vault.getAbstractFileByPath(targetPath);
+    return renamedFile instanceof import_obsidian5.TFile ? renamedFile : file;
   }
   sanitizeFileName(title) {
     return title.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120).trim();
