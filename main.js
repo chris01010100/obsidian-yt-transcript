@@ -2356,6 +2356,7 @@ var YTranslateSettingTab = class extends import_obsidian6.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "Settings for YTranscript" });
+    containerEl.createEl("small", { text: `Version: ${this.plugin.manifest.version || "unknown"}` });
     new import_obsidian6.Setting(containerEl).setName("Timestamp interval").setDesc(
       "Indicates how often timestamp should occur in text (1 - every line, 10 - every 10 lines)"
     ).addText(

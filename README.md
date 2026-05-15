@@ -38,6 +38,7 @@ Tag-Format im Frontmatter:
 - `Enable Chunking for long transcripts` (neu, Standard: aktiviert)
 - `Chunk map concurrency` (Standard: `1`, vorsichtig erhöhen)
 - `Enable debug logging` (Standard: aus, sichere Pipeline-Metadaten in der Developer Console)
+- Versionsanzeige im Settings-Header (zeigt die installierte Plugin-Version)
 
 ## Chunking für lange Transcripts
 

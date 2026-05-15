@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.14.1] – 2026-05-01
+
+### ✨ Verbesserungen
+- Plugin-Version wird jetzt im Settings-Dialog direkt unter der Überschrift angezeigt.
+- Anzeige erfolgt über `manifest.version` und zeigt damit immer die installierte Version.
+
 ## [1.14.0] – 2026-05-01
 
 ### ✨ Verbesserungen

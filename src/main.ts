@@ -234,6 +234,7 @@ class YTranslateSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 		containerEl.createEl("h2", { text: "Settings for YTranscript" });
+		containerEl.createEl("small", { text: `Version: ${this.plugin.manifest.version || "unknown"}` });
 
 		new Setting(containerEl)
 			.setName("Timestamp interval")
