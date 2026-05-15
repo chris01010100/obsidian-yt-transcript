@@ -18,6 +18,7 @@ export interface SummarizationOptions {
     enableChunking?: boolean;
     chunkConcurrency?: number;
     enableDebugLogging?: boolean;
+    requestLabel?: string;
     onChunkProgress?: (current: number, total: number) => void;
 }
 
@@ -95,6 +96,13 @@ export class SummarizationService {
         "Return only Markdown body content.",
         "Do not include YAML or metadata fields.",
     ].join("\n");
+    private static readonly TAG_PROMPT = [
+        "Create tags from the context.",
+        "Return exactly 6 tags as a single comma-separated line.",
+        "Always include youtube and transcript.",
+        "Generate 4 additional relevant tags.",
+        "Do not return explanations, lists or markdown.",
+    ].join("\n");
 
     async summarize(text: string, options?: SummarizationOptions): Promise<string> {
         const language = "";
@@ -107,6 +115,7 @@ export class SummarizationService {
             stream: false,
             chunking: useChunking,
         });
+        this.logLlmRequest(options, provider, options?.model, options?.requestLabel || "summary", false);
 
         if (useChunking) {
             return this.summarizeLargeTextMapReduce(text, options, false);
@@ -167,6 +176,7 @@ export class SummarizationService {
             stream: true,
             chunking: useChunking,
         });
+        this.logLlmRequest(options, provider, options?.model, options?.requestLabel || "summary", true);
 
         if (useChunking) {
             return this.summarizeLargeTextMapReduce(text, options, true, onChunk);
@@ -228,6 +238,17 @@ export class SummarizationService {
         return fallback;
     }
 
+    async generateTags(context: string, options?: SummarizationOptions): Promise<string[]> {
+        const rawTags = await this.summarize(context, {
+            ...options,
+            enableChunking: false,
+            requestLabel: "tag-generation",
+            promptTemplate: SummarizationService.TAG_PROMPT,
+        });
+
+        return this.normalizeTags(rawTags);
+    }
+
     private shouldUseChunking(text: string, options?: SummarizationOptions): boolean {
         const enableChunking = options?.enableChunking ?? true;
         if (!enableChunking) {
@@ -286,6 +307,7 @@ export class SummarizationService {
                             ...options,
                             promptTemplate: SummarizationService.CHUNK_PROMPT,
                             enableChunking: false,
+                            requestLabel: `chunk-map-${chunkIndex}/${chunks.length}`,
                         });
                         debugLog(debugEnabled, "Chunk summarize ok", {
                             chunk: `${chunkIndex}/${chunks.length}`,
@@ -313,7 +335,7 @@ export class SummarizationService {
         }
 
         const reduceInput = this.buildChunkedReduceInput(chunkSummaries);
-        const finalOptions = { ...options, enableChunking: false };
+        const finalOptions = { ...options, enableChunking: false, requestLabel: "chunk-final-merge" };
 
         debugLog(debugEnabled, "Final merge start", {
             successfulChunks: chunkSummaries.length,
@@ -804,6 +826,50 @@ export class SummarizationService {
         }
 
         return fullText.trim();
+    }
+
+    private normalizeTags(rawTags: string): string[] {
+        const baseTags = ["youtube", "transcript"];
+        const fallbackTags = ["summary", "knowledge", "insights", "learning"];
+
+        const candidates = rawTags
+            .replace(/[\n;]+/g, ",")
+            .split(",")
+            .map((tag) => tag.replace(/[`"']/g, "").trim().toLowerCase())
+            .map((tag) => tag.replace(/^#/, ""))
+            .filter(Boolean);
+
+        const unique = new Set<string>(baseTags);
+        for (const tag of candidates) {
+            if (unique.size >= 6) {
+                break;
+            }
+            unique.add(tag);
+        }
+
+        for (const fallbackTag of fallbackTags) {
+            if (unique.size >= 6) {
+                break;
+            }
+            unique.add(fallbackTag);
+        }
+
+        return Array.from(unique).slice(0, 6);
+    }
+
+    private logLlmRequest(
+        options: SummarizationOptions | undefined,
+        provider: string,
+        model: string | undefined,
+        step: string,
+        stream: boolean,
+    ): void {
+        debugLog(options?.enableDebugLogging, "LLM request", {
+            step,
+            provider,
+            model: model || "default",
+            stream,
+        });
     }
 
     private buildPrompt(

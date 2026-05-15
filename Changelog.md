@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.14.0] – 2026-05-01
+
+### ✨ Verbesserungen
+- Tagging von der Summary-Generierung entkoppelt.
+- Tags werden jetzt in einem separaten LLM-Schritt erzeugt und danach ins YAML-Frontmatter geschrieben.
+- Ziel-Format für Frontmatter-Tags konsistent als Array, z. B. `tags: ["youtube", "transcript", "tag1", "tag2", "tag3", "tag4"]`.
+
+### 🔎 Debugging
+- Debug-Logs für jeden LLM-Aufruf ergänzt.
+- Pro Aufruf werden nur sichere Metadaten geloggt:
+  - `step`
+  - `provider`
+  - `model`
+  - `stream`
+
+### 🔒 Sicherheit
+- Es werden keine Prompts, keine Transcript-Inhalte und keine API-Keys geloggt.
+
 ## [1.13.9] – 2026-05-01
 
 ### 🐛 Fixes

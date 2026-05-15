@@ -466,6 +466,7 @@ var _SummarizationService = class _SummarizationService {
       stream: false,
       chunking: useChunking
     });
+    this.logLlmRequest(options, provider, options == null ? void 0 : options.model, (options == null ? void 0 : options.requestLabel) || "summary", false);
     if (useChunking) {
       return this.summarizeLargeTextMapReduce(text, options, false);
     }
@@ -514,6 +515,7 @@ var _SummarizationService = class _SummarizationService {
       stream: true,
       chunking: useChunking
     });
+    this.logLlmRequest(options, provider, options == null ? void 0 : options.model, (options == null ? void 0 : options.requestLabel) || "summary", true);
     if (useChunking) {
       return this.summarizeLargeTextMapReduce(text, options, true, onChunk);
     }
@@ -568,6 +570,15 @@ var _SummarizationService = class _SummarizationService {
     await onChunk(fallback, fallback);
     return fallback;
   }
+  async generateTags(context, options) {
+    const rawTags = await this.summarize(context, {
+      ...options,
+      enableChunking: false,
+      requestLabel: "tag-generation",
+      promptTemplate: _SummarizationService.TAG_PROMPT
+    });
+    return this.normalizeTags(rawTags);
+  }
   shouldUseChunking(text, options) {
     var _a;
     const enableChunking = (_a = options == null ? void 0 : options.enableChunking) != null ? _a : true;
@@ -613,7 +624,8 @@ ${summary.trim()}`).join("\n\n");
             const chunkSummary = await this.summarize(chunk, {
               ...options,
               promptTemplate: _SummarizationService.CHUNK_PROMPT,
-              enableChunking: false
+              enableChunking: false,
+              requestLabel: `chunk-map-${chunkIndex}/${chunks.length}`
             });
             debugLog(debugEnabled, "Chunk summarize ok", {
               chunk: `${chunkIndex}/${chunks.length}`
@@ -639,7 +651,7 @@ ${summary.trim()}`).join("\n\n");
       throw new Error("All chunk summarization requests failed.");
     }
     const reduceInput = this.buildChunkedReduceInput(chunkSummaries);
-    const finalOptions = { ...options, enableChunking: false };
+    const finalOptions = { ...options, enableChunking: false, requestLabel: "chunk-final-merge" };
     debugLog(debugEnabled, "Final merge start", {
       successfulChunks: chunkSummaries.length,
       stream: streamFinal
@@ -974,6 +986,33 @@ ${summary.trim()}`).join("\n\n");
     }
     return fullText.trim();
   }
+  normalizeTags(rawTags) {
+    const baseTags = ["youtube", "transcript"];
+    const fallbackTags = ["summary", "knowledge", "insights", "learning"];
+    const candidates = rawTags.replace(/[\n;]+/g, ",").split(",").map((tag) => tag.replace(/[`"']/g, "").trim().toLowerCase()).map((tag) => tag.replace(/^#/, "")).filter(Boolean);
+    const unique = new Set(baseTags);
+    for (const tag of candidates) {
+      if (unique.size >= 6) {
+        break;
+      }
+      unique.add(tag);
+    }
+    for (const fallbackTag of fallbackTags) {
+      if (unique.size >= 6) {
+        break;
+      }
+      unique.add(fallbackTag);
+    }
+    return Array.from(unique).slice(0, 6);
+  }
+  logLlmRequest(options, provider, model, step, stream) {
+    debugLog(options == null ? void 0 : options.enableDebugLogging, "LLM request", {
+      step,
+      provider,
+      model: model || "default",
+      stream
+    });
+  }
   buildPrompt(text, language, metadata) {
     var _a;
     const userInstructions = ((_a = metadata.promptTemplate) == null ? void 0 : _a.trim()) ? this.replaceMetadataPlaceholders(metadata.promptTemplate.trim(), language, metadata) : [
@@ -1008,6 +1047,13 @@ _SummarizationService.CHUNK_PROMPT = [
   "Focus on core facts, key arguments and actionable steps.",
   "Return only Markdown body content.",
   "Do not include YAML or metadata fields."
+].join("\n");
+_SummarizationService.TAG_PROMPT = [
+  "Create tags from the context.",
+  "Return exactly 6 tags as a single comma-separated line.",
+  "Always include youtube and transcript.",
+  "Generate 4 additional relevant tags.",
+  "Do not return explanations, lists or markdown."
 ].join("\n");
 var SummarizationService = _SummarizationService;
 
@@ -1650,7 +1696,7 @@ var InsertTranscriptCommand = class {
    * Executes the insert transcript command with custom options
    */
   async executeWithOptions(editor, options, explicitTargetFile) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I, _J, _K, _L;
     let statusRequestId;
     let targetFile = explicitTargetFile || this.getActiveTargetFile();
     try {
@@ -1763,6 +1809,7 @@ var InsertTranscriptCommand = class {
           enableChunking: (_x = this.plugin.settings) == null ? void 0 : _x.enableChunking,
           chunkConcurrency: (_y = this.plugin.settings) == null ? void 0 : _y.chunkConcurrency,
           enableDebugLogging: debugEnabled,
+          requestLabel: "summary",
           onChunkProgress: (current, total) => {
             var _a2, _b2;
             if (!chunkingActive) {
@@ -1793,7 +1840,8 @@ var InsertTranscriptCommand = class {
           const liveOutput = this.buildOutput(
             streamedSummaryText || "Generating summary\u2026",
             formattedTranscript,
-            metadata
+            metadata,
+            ["youtube", "transcript"]
           );
           writableEditor.replaceRange(liveOutput, insertionStart, currentOutputEnd);
           currentOutputEnd = writableEditor.offsetToPos(
@@ -1801,10 +1849,20 @@ var InsertTranscriptCommand = class {
           );
         }
       );
+      (_A = (_z = this.plugin).setStatusForRequest) == null ? void 0 : _A.call(_z, statusRequestId, "YT: Generating tags...");
+      const generatedTags = await this.summarizationService.generateTags(summaryText, {
+        provider: (_B = this.plugin.settings) == null ? void 0 : _B.provider,
+        model: (_C = this.plugin.settings) == null ? void 0 : _C.model,
+        ollamaBaseUrl: (_D = this.plugin.settings) == null ? void 0 : _D.ollamaBaseUrl,
+        openRouterApiKey: (_E = this.plugin.settings) == null ? void 0 : _E.openRouterApiKey,
+        openAIApiKey: (_F = this.plugin.settings) == null ? void 0 : _F.openAIApiKey,
+        enableDebugLogging: debugEnabled
+      });
       const output = this.buildOutput(
         summaryText,
         formattedTranscript,
-        metadata
+        metadata,
+        generatedTags
       );
       if (!output.trim()) return;
       if (writableEditor && insertionStart && currentOutputEnd && this.isEditorWritable(writableEditor)) {
@@ -1826,13 +1884,13 @@ var InsertTranscriptCommand = class {
       }
       targetFile = await this.renameTargetNote(targetFile, metadata.videoTitle);
       if (chunkingActive) {
-        (_A = (_z = this.plugin).setStatusForRequest) == null ? void 0 : _A.call(
-          _z,
+        (_H = (_G = this.plugin).setStatusForRequest) == null ? void 0 : _H.call(
+          _G,
           statusRequestId,
           `YT: Chunking ${chunkCount}/${chunkCount}...`
         );
       }
-      (_C = (_B = this.plugin).completeStatusRequest) == null ? void 0 : _C.call(_B, statusRequestId, "YT: Done");
+      (_J = (_I = this.plugin).completeStatusRequest) == null ? void 0 : _J.call(_I, statusRequestId, "YT: Done");
       debugLog(debugEnabled, "Final summary ready", {
         summaryLength: summaryText.length
       });
@@ -1845,7 +1903,7 @@ var InsertTranscriptCommand = class {
         new import_obsidian5.Notice("Failed to generate YouTube summary. Check developer console.");
       }
       if (statusRequestId !== void 0) {
-        (_E = (_D = this.plugin).completeStatusRequest) == null ? void 0 : _E.call(_D, statusRequestId, "YT: Failed");
+        (_L = (_K = this.plugin).completeStatusRequest) == null ? void 0 : _L.call(_K, statusRequestId, "YT: Failed");
       }
       console.error("Insert transcript failed:", error);
     }
@@ -1946,14 +2004,14 @@ var InsertTranscriptCommand = class {
     if (!file || file.extension !== "md" && file.extension !== "txt") return void 0;
     return this.plugin.app.vault.cachedRead(file);
   }
-  buildOutput(summaryText, formattedTranscript, metadata) {
+  buildOutput(summaryText, formattedTranscript, metadata, tags = ["youtube", "transcript"]) {
     const cleanedSummary = this.cleanSummaryBody(
       this.replaceMetadataPlaceholders(summaryText.trim(), metadata)
     );
     const extracted = this.extractBodyMetadata(cleanedSummary);
     const frontmatter = this.buildFrontmatter(
       metadata,
-      extracted.tags,
+      tags,
       extracted.videoType
     );
     return [

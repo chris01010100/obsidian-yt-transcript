@@ -19,8 +19,11 @@ Flow:
 Jede generierte Note enthält:
 - YAML frontmatter (plugin-kontrolliert)
 - Markdown summary (LLM output)
-- extrahierte Tags im YAML
+- Tags aus separatem LLM-Tagging-Schritt im YAML
 - vollständiges Transcript
+
+Tag-Format im Frontmatter:
+- `tags: ["youtube", "transcript", "tag1", "tag2", "tag3", "tag4"]`
 
 ## Settings
 
@@ -60,6 +63,7 @@ Während der Ausführung zeigt die Obsidian-Statusleiste den Fortschritt:
 - `YT: Fetching transcript...`
 - `YT: Chunking X/Y...` (bei aktivem Chunking, live fortlaufend)
 - `YT: Final merge...`
+- `YT: Generating tags...`
 - `YT: Done` oder `YT: Failed`
 
 Hinweis: Bei langen Läufen wird der Chunk-Fortschritt kontinuierlich aktualisiert, damit kein vorzeitiges `Ready` erscheint.
@@ -80,3 +84,11 @@ Bei aktiviertem Debug-Logging protokolliert die finale Schreibstelle sichere Met
 - `writeTarget`: `editor` oder `vault.modify`
 - `targetPath`
 - `outputLength`
+
+Zusätzlich werden pro LLM-Aufruf sichere Request-Metadaten geloggt:
+- `step`
+- `provider`
+- `model`
+- `stream`
+
+Es werden keine API-Keys, Passwörter, Prompts oder Transcript-Inhalte geloggt.

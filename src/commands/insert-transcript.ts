@@ -203,6 +203,7 @@ export class InsertTranscriptCommand {
 					enableChunking: this.plugin.settings?.enableChunking,
 					chunkConcurrency: this.plugin.settings?.chunkConcurrency,
 					enableDebugLogging: debugEnabled,
+					requestLabel: "summary",
 					onChunkProgress: (current, total) => {
 						if (!chunkingActive) {
 							return;
@@ -236,6 +237,7 @@ export class InsertTranscriptCommand {
 						streamedSummaryText || "Generating summary…",
 						formattedTranscript,
 						metadata,
+						["youtube", "transcript"],
 					);
 					writableEditor.replaceRange(liveOutput, insertionStart, currentOutputEnd);
 					currentOutputEnd = writableEditor.offsetToPos(
@@ -244,11 +246,22 @@ export class InsertTranscriptCommand {
 				},
 			);
 
+			this.plugin.setStatusForRequest?.(statusRequestId, "YT: Generating tags...");
+			const generatedTags = await this.summarizationService.generateTags(summaryText, {
+				provider: this.plugin.settings?.provider,
+				model: this.plugin.settings?.model,
+				ollamaBaseUrl: this.plugin.settings?.ollamaBaseUrl,
+				openRouterApiKey: this.plugin.settings?.openRouterApiKey,
+				openAIApiKey: this.plugin.settings?.openAIApiKey,
+				enableDebugLogging: debugEnabled,
+			});
+
 			// Combine properties, summary and transcript
 			const output = this.buildOutput(
 				summaryText,
 				formattedTranscript,
 				metadata,
+				generatedTags,
 			);
 
 			if (!output.trim()) return;
@@ -422,6 +435,7 @@ export class InsertTranscriptCommand {
 		summaryText: string,
 		formattedTranscript: string,
 		metadata: VideoMetadata,
+		tags: string[] = ["youtube", "transcript"],
 	): string {
 		const cleanedSummary = this.cleanSummaryBody(
 			this.replaceMetadataPlaceholders(summaryText.trim(), metadata),
@@ -430,7 +444,7 @@ export class InsertTranscriptCommand {
 		const extracted = this.extractBodyMetadata(cleanedSummary);
 		const frontmatter = this.buildFrontmatter(
 			metadata,
-			extracted.tags,
+			tags,
 			extracted.videoType,
 		);
 
